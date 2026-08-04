@@ -336,17 +336,10 @@ export default function App() {
 
   const selectedElement = elements.find((el) => el.id === selectedElementId);
 
-  // Auto-open element inspector on mobile when an element is selected
-  useEffect(() => {
-    if (selectedElement && window.innerWidth < 1024) {
-      setBottomSheet('inspector');
-    }
-  }, [selectedElementId]);
-
   // ─── HANDLERS ──────────────────────────────────
 
   const handleAddDefaultInteraction = () => {
-    addInteraction('ls -la', 'total 8\ndrwxr-xr-x  2 hisham hisham 4096 Aug  3 18:00 .\ndrwxr-xr-x 10 hisham hisham 4096 Aug  3 18:00 ..');
+    addInteraction('ls -la', 'total 8\ndrwxr-xr-x  2 root root 4096 Aug  3 18:00 .\ndrwxr-xr-x 10 root root 4096 Aug  3 18:00 ..');
   };
 
   const loadPdfData = async (file: File) => {
@@ -1417,13 +1410,59 @@ export default function App() {
         {bottomSheet === 'inspector' && selectedElement && (
           <BottomSheet
             isOpen={true}
-            onClose={() => { setBottomSheet(null); setSelectedElementId(null); }}
+            onClose={() => setBottomSheet(null)}
             title="Element Inspector"
           >
             {renderElementInspector()}
           </BottomSheet>
         )}
       </AnimatePresence>
+
+      {/* ═══════ MOBILE FLOATING ELEMENT QUICK TOOLBAR ═══════ */}
+      {activeMode === 'pdf' && selectedElement && !bottomSheet && (
+        <motion.div 
+          className="lg:hidden fixed z-30 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-slate-900/95 border border-indigo-500/40 rounded-full px-3 py-1.5 shadow-2xl backdrop-blur-md"
+          style={{ bottom: 'calc(4.5rem + env(safe-area-inset-bottom, 0px))' }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 20 }}
+        >
+          <button 
+            onClick={() => setBottomSheet('inspector')} 
+            className="flex items-center gap-1 text-[11px] font-semibold text-indigo-300 bg-indigo-600/20 border border-indigo-500/30 px-2.5 py-1 rounded-full tap-bounce"
+          >
+            <Settings2 className="h-3.5 w-3.5" /> Controls
+          </button>
+          <button 
+            onClick={handleStartCrop} 
+            className="flex items-center gap-1 text-[11px] font-semibold text-slate-200 hover:text-indigo-300 px-2 py-1 rounded-full tap-bounce"
+          >
+            <Crop className="h-3.5 w-3.5" /> Crop
+          </button>
+          <button 
+            onClick={() => bringToFront(selectedElement.id)} 
+            className="p-1.5 text-slate-400 hover:text-slate-200 tap-bounce"
+            title="Front"
+          >
+            <Layers className="h-3.5 w-3.5" />
+          </button>
+          <button 
+            onClick={() => deleteElement(selectedElement.id)} 
+            className="p-1.5 text-red-400 hover:text-red-300 tap-bounce"
+            title="Delete"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+          <div className="h-3 w-[1px] bg-slate-700 mx-0.5" />
+          <button 
+            onClick={() => setSelectedElementId(null)} 
+            className="p-1 text-slate-400 hover:text-slate-200 tap-bounce"
+            title="Deselect"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </motion.div>
+      )}
     </div>
   );
 }

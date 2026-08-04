@@ -97,8 +97,16 @@ const ImageElement: React.FC<{
       {isSelected && !element.isLocked && !isCropMode && (
         <Transformer
           ref={trRef}
+          anchorSize={16}
+          anchorCornerRadius={4}
+          anchorFill="#ffffff"
+          anchorStroke="#6366f1"
+          anchorStrokeWidth={2}
+          borderStroke="#6366f1"
+          borderDash={[4, 4]}
+          padding={2}
           boundBoxFunc={(oldBox, newBox) => {
-            if (newBox.width < 5 || newBox.height < 5) {
+            if (newBox.width < 10 || newBox.height < 10) {
               return oldBox;
             }
             return newBox;
