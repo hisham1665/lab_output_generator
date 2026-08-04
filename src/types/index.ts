@@ -69,9 +69,9 @@ export interface CanvasPageSize {
 }
 
 export const PAGE_PRESETS: Record<PagePreset, { name: string; width: number; height: number }> = {
-  a4_portrait: { name: 'A4 Portrait (595 × 842)', width: 595, height: 842 },
-  a4_landscape: { name: 'A4 Landscape (842 × 595)', width: 842, height: 595 },
-  letter: { name: 'Letter (612 × 792)', width: 612, height: 792 },
+  a4_portrait: { name: 'A4 Portrait (210×297 mm | 2480×3508 px)', width: 595, height: 842 },
+  a4_landscape: { name: 'A4 Landscape (297×210 mm | 3508×2480 px)', width: 842, height: 595 },
+  letter: { name: 'Letter (8.5×11 in)', width: 612, height: 792 },
   square: { name: 'Square (600 × 600)', width: 600, height: 600 },
 };
 

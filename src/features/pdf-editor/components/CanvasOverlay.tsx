@@ -8,6 +8,7 @@ interface CanvasOverlayProps {
   pageNumber: number;
   width: number;
   height: number;
+  effectiveZoom: number;
 }
 
 const ImageElement: React.FC<{
@@ -117,16 +118,15 @@ const ImageElement: React.FC<{
   );
 };
 
-export const CanvasOverlay: React.FC<CanvasOverlayProps> = ({ pageNumber, width, height }) => {
+export const CanvasOverlay: React.FC<CanvasOverlayProps> = ({ pageNumber, width, height, effectiveZoom }) => {
   const { 
     elements, 
     selectedElementId, 
     setSelectedElementId, 
     updateElement, 
-    pdfDoc, 
     deleteElement 
   } = useStore();
-  const zoomScale = pdfDoc.zoomScale;
+  const zoomScale = effectiveZoom;
 
   // Crop mode state: which element is currently being cropped
   const [cropElementId, setCropElementId] = useState<string | null>(null);

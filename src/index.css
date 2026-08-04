@@ -22,6 +22,15 @@
   }
 }
 
+/* Hide scrollbars for clean mobile toolbars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* ═══════ Glassmorphism utilities ═══════ */
 .glass-panel {
   @apply bg-slate-900/60 backdrop-blur-md border border-slate-800/80 shadow-xl;

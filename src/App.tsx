@@ -356,6 +356,9 @@ export default function App() {
     addInteraction('ls -la', 'total 8\ndrwxr-xr-x  2 root root 4096 Aug  3 18:00 .\ndrwxr-xr-x 10 root root 4096 Aug  3 18:00 ..');
   };
 
+  // Pending PDF File safeguard state when canvas has active edits
+  const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
+
   const loadPdfData = async (file: File) => {
     setIsPdfLoading(true);
     try {
@@ -369,6 +372,7 @@ export default function App() {
         pageSizes.push({ width: viewport.width, height: viewport.height });
       }
       setPdfFile(file, pageSizes);
+      showToast(`Loaded ${file.name} (${numPages} pages)`, 'success');
     } catch (error) {
       console.error('Error loading PDF file:', error);
       showToast('Failed to parse PDF document.', 'error');
@@ -377,9 +381,26 @@ export default function App() {
     }
   };
 
+  const handlePdfUploadAttempt = useCallback((file: File) => {
+    if (elements.length > 0) {
+      setPendingPdfFile(file);
+    } else {
+      loadPdfData(file);
+    }
+  }, [elements.length]);
+
+  useEffect(() => {
+    const handleRequest = (e: any) => {
+      const file = e.detail?.file;
+      if (file) handlePdfUploadAttempt(file);
+    };
+    window.addEventListener('request-pdf-upload', handleRequest);
+    return () => window.removeEventListener('request-pdf-upload', handleRequest);
+  }, [handlePdfUploadAttempt]);
+
   const handleSidebarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) loadPdfData(file);
+    if (file) handlePdfUploadAttempt(file);
   };
 
   // Copy terminal image to clipboard
@@ -805,45 +826,52 @@ export default function App() {
         {activeMode === 'pdf' && (
           <div className="flex-1 p-5 space-y-5 flex flex-col justify-start overflow-y-auto">
             {isPdfLoading ? (
-              <div className="flex-grow flex flex-col items-center justify-center">
+              <div className="flex-grow flex flex-col items-center justify-center py-12">
                 <span className="h-8 w-8 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin mb-4" />
                 <p className="text-xs text-slate-400">Loading document...</p>
               </div>
-            ) : !pdfDoc.file ? (
-              <div className="flex-grow flex flex-col justify-center items-center text-center">
-                <div className="h-12 w-12 rounded-xl bg-slate-950 border border-slate-800/80 flex items-center justify-center mb-2">
-                  <FileText className="h-6 w-6 text-indigo-400" />
-                </div>
-                <h3 className="font-bold text-sm text-slate-300">Upload PDF document</h3>
-                <p className="text-xs text-slate-500 max-w-[200px] mt-1 leading-relaxed">Import your laboratory records to place generated terminal outputs.</p>
-                <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2 px-4 rounded-lg shadow-lg shadow-indigo-600/10 transition-all mt-4">
-                  Select File
-                  <input type="file" accept=".pdf" className="hidden" onChange={handleSidebarFileChange} />
-                </label>
-              </div>
             ) : (
               <div className="space-y-4">
-                {/* Loaded file info */}
-                <div className="p-4 bg-slate-950/40 border border-slate-800/80 rounded-xl space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-slate-400 font-medium">Loaded File</span>
-                    <button onClick={() => setPdfFile(null)} className="text-[10px] text-red-400 hover:text-red-300 font-bold uppercase tracking-wider transition-colors">Clear</button>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-lg bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
-                      <FileText className="h-4 w-4" />
+                {/* File / Canvas Mode Info Card */}
+                {pdfDoc.file ? (
+                  <div className="p-4 bg-slate-950/40 border border-slate-800/80 rounded-xl space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-slate-400 font-medium">Loaded File</span>
+                      <button onClick={() => setPdfFile(null)} className="text-[10px] text-red-400 hover:text-red-300 font-bold uppercase tracking-wider transition-colors">Clear</button>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs text-slate-200 font-semibold truncate">{pdfDoc.file.name}</p>
-                      <p className="text-[10px] text-slate-500 font-medium mt-0.5">{(pdfDoc.file.size / 1024 / 1024).toFixed(2)} MB • {pdfDoc.numPages} Pages</p>
+                    <div className="flex items-center gap-3">
+                      <div className="h-8 w-8 rounded-lg bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
+                        <FileText className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs text-slate-200 font-semibold truncate">{pdfDoc.file.name}</p>
+                        <p className="text-[10px] text-slate-500 font-medium mt-0.5">{(pdfDoc.file.size / 1024 / 1024).toFixed(2)} MB • {pdfDoc.numPages} Pages</p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="p-4 bg-indigo-950/20 border border-indigo-500/30 rounded-xl space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-semibold text-indigo-300">Canvas Mode Active</span>
+                      <span className="text-[9px] bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 px-1.5 py-0.5 rounded uppercase font-bold">A4 300DPI</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Editing on multi-page A4 canvas. You can place photos/snapshots and export directly to PDF.
+                    </p>
+                    <label className="cursor-pointer bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all mt-2">
+                      <FilePlus className="h-3.5 w-3.5 text-indigo-400" />
+                      Import PDF File
+                      <input type="file" accept=".pdf" className="hidden" onChange={handleSidebarFileChange} />
+                    </label>
+                  </div>
+                )}
 
-                <label className="cursor-pointer bg-slate-900 hover:bg-slate-850 text-slate-300 border border-slate-800 flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-xs font-semibold transition-all">
-                  <FilePlus className="h-3.5 w-3.5" />Replace PDF
-                  <input type="file" accept=".pdf" className="hidden" onChange={handleSidebarFileChange} />
-                </label>
+                {pdfDoc.file && (
+                  <label className="cursor-pointer bg-slate-900 hover:bg-slate-850 text-slate-300 border border-slate-800 flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-xs font-semibold transition-all">
+                    <FilePlus className="h-3.5 w-3.5" />Replace PDF
+                    <input type="file" accept=".pdf" className="hidden" onChange={handleSidebarFileChange} />
+                  </label>
+                )}
 
                 {/* Snapshot Gallery */}
                 <div className="space-y-2 pt-4 border-t border-slate-800/40">
@@ -1343,83 +1371,86 @@ export default function App() {
             title="PDF Controls"
           >
             <div className="space-y-4">
-              {!pdfDoc.file ? (
-                <div className="text-center py-6">
-                  <FileText className="h-10 w-10 text-slate-600 mx-auto mb-3" />
-                  <p className="text-sm text-slate-400 font-medium">No PDF loaded</p>
-                  <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm py-3 px-5 rounded-xl shadow-lg inline-block mt-3 tap-bounce">
-                    Upload PDF
+              {pdfDoc.file ? (
+                <div className="p-4 bg-slate-950/40 border border-slate-800/80 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                      <FileText className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-slate-200 font-semibold truncate">{pdfDoc.file.name}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{(pdfDoc.file.size / 1024 / 1024).toFixed(2)} MB • {pdfDoc.numPages} Pages</p>
+                    </div>
+                    <button onClick={() => setPdfFile(null)} className="p-2 text-red-400 tap-bounce touch-btn-sm">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 bg-indigo-950/20 border border-indigo-500/30 rounded-xl space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-semibold text-indigo-300">Canvas Mode Active</span>
+                    <span className="text-[9px] bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 px-1.5 py-0.5 rounded uppercase font-bold">A4 300DPI</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Working on A4 blank canvas. Place snapshots or images, resize/crop them, then export to PDF.
+                  </p>
+                  <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2 px-4 rounded-lg shadow-lg inline-block mt-1 tap-bounce">
+                    Import PDF File
                     <input type="file" accept=".pdf" className="hidden" onChange={handleSidebarFileChange} />
                   </label>
                 </div>
-              ) : (
-                <>
-                  <div className="p-4 bg-slate-950/40 border border-slate-800/80 rounded-xl">
-                    <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-lg bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-                        <FileText className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm text-slate-200 font-semibold truncate">{pdfDoc.file.name}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">{(pdfDoc.file.size / 1024 / 1024).toFixed(2)} MB • {pdfDoc.numPages} Pages</p>
-                      </div>
-                      <button onClick={() => setPdfFile(null)} className="p-2 text-red-400 tap-bounce touch-btn-sm">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Snapshot Gallery */}
-                  <div className="space-y-2">
-                    <span className="text-[11px] font-bold tracking-wider text-indigo-400 uppercase">Snapshots ({savedSnapshots.length})</span>
-                    {savedSnapshots.length === 0 ? (
-                      <p className="text-xs text-slate-500 italic py-2">No snapshots yet. Create them in Terminal mode.</p>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-2">
-                        {savedSnapshots.map((snap) => (
-                          <div key={snap.id} className="p-2 bg-slate-950/40 border border-slate-800/80 rounded-lg">
-                            <img src={snap.dataUrl} alt={snap.name} className="w-full h-16 object-contain rounded bg-slate-950 mb-1" />
-                            <div className="flex items-center justify-between">
-                              <p className="text-[10px] text-slate-300 font-medium truncate flex-1">{snap.name}</p>
-                              <button onClick={() => deleteSnapshot(snap.id)} className="p-1 text-slate-500 hover:text-red-400"><Trash2 className="h-3 w-3" /></button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Placed elements list */}
-                  <div className="space-y-2">
-                    <span className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">Elements ({elements.length})</span>
-                    {elements.length > 0 && (
-                      <div className="space-y-1.5">
-                        {elements.map((el, idx) => (
-                          <button
-                            key={el.id}
-                            onClick={() => { setSelectedElementId(el.id); setBottomSheet('inspector'); }}
-                            className={`w-full p-3 rounded-xl flex items-center justify-between transition-all text-left tap-bounce ${
-                              el.id === selectedElementId
-                                ? 'bg-indigo-600/10 border border-indigo-500/30'
-                                : 'bg-slate-950/40 border border-slate-800/80'
-                            }`}
-                          >
-                            <div>
-                              <p className="text-xs text-slate-300 font-medium">
-                                {el.sourceType === 'upload' ? '📷 Image' : '💻 Snapshot'} #{idx + 1}
-                              </p>
-                              <p className="text-[10px] text-slate-500 mt-0.5">Page {el.pageNumber} • {el.crop ? '✂️ Cropped' : 'Full'}</p>
-                            </div>
-                            <button onClick={(ev) => { ev.stopPropagation(); deleteElement(el.id); }} className="p-2 text-slate-500 hover:text-red-400 touch-btn-sm">
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </>
               )}
+
+              {/* Snapshot Gallery */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold tracking-wider text-indigo-400 uppercase">Snapshots ({savedSnapshots.length})</span>
+                {savedSnapshots.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic py-2">No snapshots yet. Create them in Terminal mode.</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {savedSnapshots.map((snap) => (
+                      <div key={snap.id} className="p-2 bg-slate-950/40 border border-slate-800/80 rounded-lg">
+                        <img src={snap.dataUrl} alt={snap.name} className="w-full h-16 object-contain rounded bg-slate-950 mb-1" />
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] text-slate-300 font-medium truncate flex-1">{snap.name}</p>
+                          <button onClick={() => deleteSnapshot(snap.id)} className="p-1 text-slate-500 hover:text-red-400"><Trash2 className="h-3 w-3" /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Placed elements list */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">Elements ({elements.length})</span>
+                {elements.length > 0 && (
+                  <div className="space-y-1.5">
+                    {elements.map((el, idx) => (
+                      <button
+                        key={el.id}
+                        onClick={() => { setSelectedElementId(el.id); setBottomSheet('inspector'); }}
+                        className={`w-full p-3 rounded-xl flex items-center justify-between transition-all text-left tap-bounce ${
+                          el.id === selectedElementId
+                            ? 'bg-indigo-600/10 border border-indigo-500/30'
+                            : 'bg-slate-950/40 border border-slate-800/80'
+                        }`}
+                      >
+                        <div>
+                          <p className="text-xs text-slate-300 font-medium">
+                            {el.sourceType === 'upload' ? '📷 Image' : '💻 Snapshot'} #{idx + 1}
+                          </p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">Page {el.pageNumber} • {el.crop ? '✂️ Cropped' : 'Full'}</p>
+                        </div>
+                        <button onClick={(ev) => { ev.stopPropagation(); deleteElement(el.id); }} className="p-2 text-slate-500 hover:text-red-400 touch-btn-sm">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </BottomSheet>
         )}
@@ -1439,7 +1470,7 @@ export default function App() {
       {/* ═══════ MOBILE FLOATING ELEMENT QUICK TOOLBAR ═══════ */}
       {activeMode === 'pdf' && selectedElement && !bottomSheet && (
         <motion.div 
-          className="lg:hidden fixed z-30 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-slate-900/95 border border-indigo-500/40 rounded-full px-3 py-1.5 shadow-2xl backdrop-blur-md"
+          className="lg:hidden fixed z-30 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-slate-900/95 border border-indigo-500/40 rounded-full px-3 py-1.5 shadow-2xl backdrop-blur-md max-w-[92vw] overflow-x-auto no-scrollbar"
           style={{ bottom: 'calc(4.5rem + env(safe-area-inset-bottom, 0px))' }}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1447,39 +1478,96 @@ export default function App() {
         >
           <button 
             onClick={() => setBottomSheet('inspector')} 
-            className="flex items-center gap-1 text-[11px] font-semibold text-indigo-300 bg-indigo-600/20 border border-indigo-500/30 px-2.5 py-1 rounded-full tap-bounce"
+            className="flex items-center gap-1 text-[11px] font-semibold text-indigo-300 bg-indigo-600/20 border border-indigo-500/30 px-2.5 py-1 rounded-full tap-bounce shrink-0"
           >
             <Settings2 className="h-3.5 w-3.5" /> Controls
           </button>
           <button 
             onClick={handleStartCrop} 
-            className="flex items-center gap-1 text-[11px] font-semibold text-slate-200 hover:text-indigo-300 px-2 py-1 rounded-full tap-bounce"
+            className="flex items-center gap-1 text-[11px] font-semibold text-slate-200 hover:text-indigo-300 px-2.5 py-1 rounded-full tap-bounce shrink-0"
           >
             <Crop className="h-3.5 w-3.5" /> Crop
           </button>
           <button 
             onClick={() => bringToFront(selectedElement.id)} 
-            className="p-1.5 text-slate-400 hover:text-slate-200 tap-bounce"
+            className="p-1.5 text-slate-400 hover:text-slate-200 tap-bounce shrink-0"
             title="Front"
           >
             <Layers className="h-3.5 w-3.5" />
           </button>
           <button 
             onClick={() => deleteElement(selectedElement.id)} 
-            className="p-1.5 text-red-400 hover:text-red-300 tap-bounce"
+            className="p-1.5 text-red-400 hover:text-red-300 tap-bounce shrink-0"
             title="Delete"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
-          <div className="h-3 w-[1px] bg-slate-700 mx-0.5" />
+          <div className="h-3 w-[1px] bg-slate-700 mx-0.5 shrink-0" />
           <button 
             onClick={() => setSelectedElementId(null)} 
-            className="p-1 text-slate-400 hover:text-slate-200 tap-bounce"
+            className="p-1 text-slate-400 hover:text-slate-200 tap-bounce shrink-0"
             title="Deselect"
           >
             <X className="h-4 w-4" />
           </button>
         </motion.div>
+      )}
+
+      {/* ═══════ PDF UPLOAD OVERWRITE SAFEGUARD MODAL ═══════ */}
+      {pendingPdfFile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <motion.div 
+            className="w-full max-w-md bg-slate-900 border border-slate-700/80 rounded-2xl p-6 shadow-2xl space-y-4"
+            initial={{ opacity: 0, scale: 0.9, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+          >
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                <FileText className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-slate-100">Replace Active Canvas?</h3>
+                <p className="text-xs text-slate-400 mt-0.5 font-medium">You have active edits on your canvas</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/50 p-3 rounded-xl border border-slate-800">
+              Importing <strong className="text-indigo-300">{pendingPdfFile.name}</strong> will reset your current canvas pages and placed elements ({elements.length}). Would you like to export your current canvas work to PDF first?
+            </p>
+
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                onClick={async () => {
+                  const fileToLoad = pendingPdfFile;
+                  setPendingPdfFile(null);
+                  await handleExportPdf();
+                  await loadPdfData(fileToLoad);
+                }}
+                className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 tap-bounce cursor-pointer"
+              >
+                <Download className="h-4 w-4" /> Export Canvas First & Import PDF
+              </button>
+
+              <button
+                onClick={() => {
+                  const fileToLoad = pendingPdfFile;
+                  setPendingPdfFile(null);
+                  loadPdfData(fileToLoad);
+                }}
+                className="w-full py-2.5 px-4 bg-slate-800 hover:bg-red-600/80 text-slate-200 hover:text-white font-semibold text-xs rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-2 tap-bounce cursor-pointer"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-red-400" /> Discard Canvas & Import PDF
+              </button>
+
+              <button
+                onClick={() => setPendingPdfFile(null)}
+                className="w-full py-2 px-4 text-slate-400 hover:text-slate-200 font-medium text-xs rounded-lg transition-colors text-center cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </motion.div>
+        </div>
       )}
     </div>
   );
