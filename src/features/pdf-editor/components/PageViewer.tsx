@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useStore } from '../../../store/globalStore';
 import { CanvasOverlay } from './CanvasOverlay';
-import { FileText, ZoomIn, ZoomOut, Loader2, ImagePlus, X } from 'lucide-react';
+import { FileText, ZoomIn, ZoomOut, Loader2, ImagePlus, Upload, X } from 'lucide-react';
 
 // Set up pdf.js worker URL
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
@@ -89,7 +89,7 @@ export const PageViewer: React.FC = () => {
   const { pdfDoc, setPdfFile, setZoomScale, savedSnapshots, addElement } = useStore();
   const [pdfDocument, setPdfDocument] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [pickerPage, setPickerPage] = useState<number | null>(null); // which page is showing the snapshot picker
+  const [pickerPage, setPickerPage] = useState<number | null>(null);
 
   useEffect(() => {
     const loadPdfDoc = async () => {
@@ -133,7 +133,7 @@ export const PageViewer: React.FC = () => {
       setPdfFile(file, pageSizes);
     } catch (error) {
       console.error('Error loading PDF file:', error);
-      alert('Failed to parse PDF document. Ensure the file is not corrupted.');
+      window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Failed to parse PDF. File may be corrupted.', type: 'error' } }));
     } finally {
       setIsLoading(false);
     }
@@ -149,6 +149,7 @@ export const PageViewer: React.FC = () => {
 
     addElement({
       snapshotId: snap.id,
+      sourceType: 'snapshot',
       dataUrl: snap.dataUrl,
       x: 50,
       y: 50,
@@ -165,7 +166,55 @@ export const PageViewer: React.FC = () => {
     });
 
     setPickerPage(null);
+    window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Snapshot placed on page!', type: 'success' } }));
   };
+
+  // ─── Image Upload Handler ───
+  const handleImageUpload = useCallback((pageNum: number) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/jpeg,image/webp,image/gif';
+    input.onchange = (e: any) => {
+      const file = e.target?.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        if (!dataUrl) return;
+
+        // Get natural dimensions
+        const img = new window.Image();
+        img.onload = () => {
+          const aspect = img.naturalWidth / img.naturalHeight;
+          const placementWidth = Math.min(400, img.naturalWidth);
+          const placementHeight = placementWidth / aspect;
+
+          addElement({
+            sourceType: 'upload',
+            dataUrl,
+            x: 50,
+            y: 50,
+            width: placementWidth,
+            height: placementHeight,
+            rotation: 0,
+            opacity: 1,
+            shadowBlur: 0,
+            shadowColor: 'rgba(0,0,0,0)',
+            borderRadius: 0,
+            crop: null,
+            isLocked: false,
+            pageNumber: pageNum,
+          });
+
+          window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: `Image placed on page ${pageNum}!`, type: 'success' } }));
+        };
+        img.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  }, [addElement]);
 
   const handleZoom = (amount: number) => {
     setZoomScale(pdfDoc.zoomScale + amount);
@@ -182,7 +231,7 @@ export const PageViewer: React.FC = () => {
 
   if (!pdfDoc.file || !pdfDocument) {
     return (
-      <div className="flex flex-col items-center max-w-lg p-12 glass-panel rounded-2xl border border-slate-800 text-center">
+      <div className="flex flex-col items-center max-w-lg p-8 lg:p-12 glass-panel rounded-2xl border border-slate-800 text-center mx-4">
         <div className="h-16 w-16 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center mb-6">
           <FileText className="h-8 w-8 text-indigo-400" />
         </div>
@@ -190,7 +239,7 @@ export const PageViewer: React.FC = () => {
         <p className="text-sm text-slate-400 mt-2 leading-relaxed">
           Upload a laboratory report PDF to activate canvas page rendering.
         </p>
-        <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2.5 px-5 rounded-lg shadow-lg shadow-indigo-600/10 transition-all mt-6 inline-block">
+        <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm py-3 px-6 rounded-xl shadow-lg shadow-indigo-600/10 transition-all mt-6 inline-block tap-bounce touch-btn">
           Upload Lab PDF
           <input 
             type="file" 
@@ -206,11 +255,11 @@ export const PageViewer: React.FC = () => {
   return (
     <div className="flex flex-col h-full w-full">
       {/* Viewer controls */}
-      <div className="h-12 border-b border-slate-800/80 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center gap-4 px-6 select-none shrink-0 z-20">
+      <div className="h-12 border-b border-slate-800/80 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center gap-3 lg:gap-4 px-3 lg:px-6 select-none shrink-0 z-20">
         <div className="flex gap-1 items-center">
           <button 
             onClick={() => handleZoom(-0.1)}
-            className="p-1.5 hover:text-indigo-400 rounded hover:bg-slate-800 transition-colors"
+            className="p-2 hover:text-indigo-400 rounded-lg hover:bg-slate-800 transition-colors touch-btn-sm"
             title="Zoom Out"
           >
             <ZoomOut className="h-4 w-4" />
@@ -220,43 +269,57 @@ export const PageViewer: React.FC = () => {
           </span>
           <button 
             onClick={() => handleZoom(0.1)}
-            className="p-1.5 hover:text-indigo-400 rounded hover:bg-slate-800 transition-colors"
+            className="p-2 hover:text-indigo-400 rounded-lg hover:bg-slate-800 transition-colors touch-btn-sm"
             title="Zoom In"
           >
             <ZoomIn className="h-4 w-4" />
           </button>
         </div>
-        <span className="text-xs text-slate-500 font-medium">|</span>
-        <span className="text-xs text-slate-400">
-          <strong className="text-slate-300">{pdfDoc.numPages}</strong> pages • <strong className="text-slate-300">{savedSnapshots.length}</strong> snapshots saved
+        <span className="text-xs text-slate-500 font-medium hidden sm:inline">|</span>
+        <span className="text-xs text-slate-400 hidden sm:inline">
+          <strong className="text-slate-300">{pdfDoc.numPages}</strong> pages • <strong className="text-slate-300">{savedSnapshots.length}</strong> snapshots
         </span>
       </div>
 
       {/* Pages Container */}
-      <div className="flex-1 overflow-y-auto px-4 bg-slate-950/20">
+      <div className="flex-1 overflow-y-auto overflow-x-auto px-2 lg:px-4 bg-slate-950/20">
         {Array.from({ length: pdfDoc.numPages }, (_, i) => i + 1).map((pageNum) => (
-          <div key={pageNum} className="relative mx-auto my-8 max-w-fit flex flex-col items-center">
+          <div key={pageNum} className="relative mx-auto my-4 lg:my-8 max-w-fit flex flex-col items-center">
             {/* Page Header Bar */}
-            <div className="flex items-center justify-between bg-slate-900 border border-slate-700/60 border-b-0 rounded-t-lg px-4 py-2 select-none w-full">
-              <span className="text-xs font-semibold text-slate-400">
+            <div className="flex items-center justify-between bg-slate-900 border border-slate-700/60 border-b-0 rounded-t-lg px-3 lg:px-4 py-2 select-none w-full gap-2">
+              <span className="text-xs font-semibold text-slate-400 shrink-0">
                 Page <strong className="text-slate-200">{pageNum}</strong> / {pdfDoc.numPages}
               </span>
-              <button
-                onClick={() => setPickerPage(pickerPage === pageNum ? null : pageNum)}
-                className="text-[10px] bg-indigo-600 hover:bg-indigo-500 hover:scale-[1.02] text-white font-bold uppercase tracking-wider py-1.5 px-3.5 rounded-md transition-all flex items-center gap-1.5 shadow-md shadow-indigo-600/10 active:scale-[0.98]"
-              >
-                <ImagePlus className="h-3 w-3" />
-                Place Snapshot
-              </button>
+              <div className="flex gap-1.5">
+                {/* Upload Image button */}
+                <button
+                  onClick={() => handleImageUpload(pageNum)}
+                  className="text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold uppercase tracking-wider py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5 shadow-md shadow-emerald-600/10 active:scale-[0.97] tap-bounce"
+                  title="Upload your own image"
+                >
+                  <Upload className="h-3 w-3" />
+                  <span className="hidden sm:inline">Upload Image</span>
+                  <span className="sm:hidden">Image</span>
+                </button>
+                {/* Place Snapshot button */}
+                <button
+                  onClick={() => setPickerPage(pickerPage === pageNum ? null : pageNum)}
+                  className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white font-bold uppercase tracking-wider py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5 shadow-md shadow-indigo-600/10 active:scale-[0.97] tap-bounce"
+                >
+                  <ImagePlus className="h-3 w-3" />
+                  <span className="hidden sm:inline">Place Snapshot</span>
+                  <span className="sm:hidden">Snap</span>
+                </button>
+              </div>
             </div>
 
             {/* Snapshot Picker Dropdown */}
             {pickerPage === pageNum && (
-              <div className="w-full bg-slate-900 border-x border-slate-700/60 px-4 py-3 z-30 relative">
+              <div className="w-full bg-slate-900 border-x border-slate-700/60 px-3 lg:px-4 py-3 z-30 relative">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Choose a Snapshot</span>
-                  <button onClick={() => setPickerPage(null)} className="p-0.5 hover:text-red-400 text-slate-400 transition-colors">
-                    <X className="h-3.5 w-3.5" />
+                  <button onClick={() => setPickerPage(null)} className="p-1 hover:text-red-400 text-slate-400 transition-colors touch-btn-sm">
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
                 {savedSnapshots.length === 0 ? (
@@ -269,7 +332,7 @@ export const PageViewer: React.FC = () => {
                       <button
                         key={snap.id}
                         onClick={() => handlePlaceSnapshot(snap.id, pageNum)}
-                        className="group bg-slate-950 border border-slate-800 hover:border-indigo-500/50 rounded-lg p-2 transition-all hover:shadow-lg hover:shadow-indigo-600/5 text-left"
+                        className="group bg-slate-950 border border-slate-800 hover:border-indigo-500/50 rounded-lg p-2 transition-all hover:shadow-lg hover:shadow-indigo-600/5 text-left tap-bounce"
                       >
                         <img 
                           src={snap.dataUrl} 

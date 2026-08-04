@@ -259,6 +259,7 @@ export const useStore = create<AppState>()(
         const nextZIndex = pageElements.length;
         const newElement: CanvasElement = {
           ...element,
+          sourceType: element.sourceType || 'snapshot',
           id: crypto.randomUUID(),
           zIndex: nextZIndex,
         };

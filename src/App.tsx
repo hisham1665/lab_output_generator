@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useStore } from './store/globalStore';
 import { THEME_PRESETS } from './features/themes';
 import { PageViewer } from './features/pdf-editor/components/PageViewer';
 import { toPng, toBlob } from 'html-to-image';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { AnimatePresence, motion } from 'framer-motion';
 import { 
   Terminal as TerminalIcon, 
   FileText, 
@@ -25,11 +26,123 @@ import {
   Lock,
   Unlock,
   Layers,
-  X
+  X,
+  Settings2,
+  Clipboard,
+  Palette,
+  List,
+  Type,
 } from 'lucide-react';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
+// ═══════════════════════════════════════════════════════
+// TOAST SYSTEM
+// ═══════════════════════════════════════════════════════
+interface Toast {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'info';
+  exiting?: boolean;
+}
+
+function useToast() {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const id = crypto.randomUUID();
+    setToasts((prev) => [...prev.slice(-2), { id, message, type }]);
+    
+    setTimeout(() => {
+      setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, exiting: true } : t)));
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 250);
+    }, 2500);
+  }, []);
+
+  // Listen for global toast events
+  useEffect(() => {
+    const handler = (e: CustomEvent) => {
+      showToast(e.detail.message, e.detail.type || 'info');
+    };
+    window.addEventListener('show-toast' as any, handler as any);
+    return () => window.removeEventListener('show-toast' as any, handler as any);
+  }, [showToast]);
+
+  return { toasts, showToast };
+}
+
+// Toast Display Component
+function ToastContainer({ toasts }: { toasts: Toast[] }) {
+  if (toasts.length === 0) return null;
+  return (
+    <div className="toast-container">
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className={`toast ${t.type === 'success' ? 'toast-success' : t.type === 'error' ? 'toast-error' : 'toast-info'} ${t.exiting ? 'toast-exit' : ''}`}
+        >
+          {t.type === 'success' && <span className="inline-flex mr-2">✓</span>}
+          {t.type === 'error' && <span className="inline-flex mr-2">✕</span>}
+          {t.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// BOTTOM SHEET COMPONENT
+// ═══════════════════════════════════════════════════════
+function BottomSheet({ isOpen, onClose, title, children }: {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <>
+      <motion.div
+        className="fixed inset-0 bg-black/50 z-40"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+      />
+      <motion.div
+        className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900 border-t border-slate-700/60 rounded-t-2xl"
+        style={{ maxHeight: '80vh', paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))' }}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+      >
+        {/* Drag handle */}
+        <div className="w-10 h-1 rounded-full bg-slate-600 mx-auto my-3" />
+        
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pb-3 border-b border-slate-800/60">
+          <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">{title}</h3>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-200 touch-btn-sm">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        
+        {/* Content */}
+        <div className="overflow-y-auto px-5 py-4" style={{ maxHeight: 'calc(80vh - 5rem)' }}>
+          {children}
+        </div>
+      </motion.div>
+    </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+// MAIN APP
+// ═══════════════════════════════════════════════════════
 export default function App() {
   const {
     activeMode,
@@ -48,7 +161,6 @@ export default function App() {
     pdfDoc,
     setPdfFile,
     elements,
-
     duplicateElement,
     deleteElement,
     selectedElementId,
@@ -57,28 +169,27 @@ export default function App() {
     savedSnapshots,
     addSnapshot,
     deleteSnapshot,
-
     bringToFront,
     sendToBack,
   } = useStore();
 
-  const [activeTab, setActiveTab] = useState<'prompt' | 'style' | 'sequence'>('prompt');
+  const { toasts, showToast } = useToast();
+
+  // Mobile UI state
+  const [bottomSheet, setBottomSheet] = useState<string | null>(null);
+  const [fabOpen, setFabOpen] = useState(false);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
+  
   const activeTheme = THEME_PRESETS[settings.themeId] || THEME_PRESETS.ubuntu;
 
-  // Track natural image size for crop controls
-  const [naturalSize, setNaturalSize] = useState({ width: 100, height: 100 });
   const selectedElement = elements.find((el) => el.id === selectedElementId);
 
+  // Auto-open element inspector on mobile when an element is selected
   useEffect(() => {
-    if (selectedElement) {
-      const img = new Image();
-      img.src = selectedElement.dataUrl;
-      img.onload = () => {
-        setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
-      };
+    if (selectedElement && window.innerWidth < 1024) {
+      setBottomSheet('inspector');
     }
-  }, [selectedElementId, selectedElement?.dataUrl]);
+  }, [selectedElementId]);
 
   // ─── HANDLERS ──────────────────────────────────
 
@@ -86,7 +197,6 @@ export default function App() {
     addInteraction('ls -la', 'total 8\ndrwxr-xr-x  2 hisham hisham 4096 Aug  3 18:00 .\ndrwxr-xr-x 10 hisham hisham 4096 Aug  3 18:00 ..');
   };
 
-  // Load PDF data
   const loadPdfData = async (file: File) => {
     setIsPdfLoading(true);
     try {
@@ -102,7 +212,7 @@ export default function App() {
       setPdfFile(file, pageSizes);
     } catch (error) {
       console.error('Error loading PDF file:', error);
-      alert('Failed to parse PDF document. Ensure the file is not corrupted.');
+      showToast('Failed to parse PDF document.', 'error');
     } finally {
       setIsPdfLoading(false);
     }
@@ -121,12 +231,13 @@ export default function App() {
       const blob = await toBlob(node, { pixelRatio: 2.5, backgroundColor: 'transparent' });
       if (blob) {
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-        alert('Terminal snapshot copied to clipboard!');
+        showToast('Terminal snapshot copied to clipboard!', 'success');
       }
     } catch (error) {
       console.error('Error copying image:', error);
-      alert('Failed to copy image. Check browser permissions.');
+      showToast('Failed to copy image. Check browser permissions.', 'error');
     }
+    setFabOpen(false);
   };
 
   // Download terminal as PNG
@@ -139,10 +250,12 @@ export default function App() {
       link.download = `terminal_${settings.username}_${Date.now()}.png`;
       link.href = dataUrl;
       link.click();
+      showToast('PNG downloaded!', 'success');
     } catch (error) {
       console.error('Error downloading PNG:', error);
-      alert('Failed to generate PNG image.');
+      showToast('Failed to generate PNG image.', 'error');
     }
+    setFabOpen(false);
   };
 
   // Save terminal snapshot to gallery
@@ -159,18 +272,20 @@ export default function App() {
         width: rect.width,
         height: rect.height,
       });
-      alert(`"${name}" saved to snapshot gallery! Switch to PDF Editor to place it.`);
+      showToast(`"${name}" saved! Switch to PDF Editor to place it.`, 'success');
     } catch (error) {
       console.error('Error saving snapshot:', error);
-      alert('Failed to capture terminal snapshot.');
+      showToast('Failed to capture terminal snapshot.', 'error');
     }
+    setFabOpen(false);
   };
 
   // Quick insert: save snapshot then switch to PDF mode
   const handleInsertToPdf = async () => {
     if (!pdfDoc.file) {
-      alert('Please upload a PDF file first in PDF Editor mode!');
+      showToast('Upload a PDF file first!', 'info');
       setActiveMode('pdf');
+      setFabOpen(false);
       return;
     }
     const node = document.getElementById('terminal-render-target');
@@ -181,11 +296,12 @@ export default function App() {
       const name = `Terminal ${savedSnapshots.length + 1}`;
       addSnapshot({ name, dataUrl, width: rect.width, height: rect.height });
       setActiveMode('pdf');
-      alert(`Snapshot saved! Now click "Place Snapshot" on any page to place it.`);
+      showToast('Snapshot saved! Click "Place Snapshot" on any page.', 'success');
     } catch (error) {
       console.error('Error inserting to PDF:', error);
-      alert('Failed to capture terminal image.');
+      showToast('Failed to capture terminal image.', 'error');
     }
+    setFabOpen(false);
   };
 
   // Compile and export the edited PDF
@@ -227,7 +343,14 @@ export default function App() {
 
           const base64Data = dataUrlToEmbed.split(',')[1];
           const imageBytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
-          const embeddedImage = await pdfLibDoc.embedPng(imageBytes);
+          
+          // Support both PNG and JPEG
+          let embeddedImage;
+          if (dataUrlToEmbed.startsWith('data:image/jpeg') || dataUrlToEmbed.startsWith('data:image/jpg')) {
+            embeddedImage = await pdfLibDoc.embedJpg(imageBytes);
+          } else {
+            embeddedImage = await pdfLibDoc.embedPng(imageBytes);
+          }
 
           const x = el.x;
           const y = pagePdfHeight - el.y - el.height;
@@ -248,40 +371,208 @@ export default function App() {
       link.href = URL.createObjectURL(blob);
       link.download = `edited_${pdfDoc.file.name}`;
       link.click();
-      alert('PDF exported successfully!');
+      showToast('PDF exported successfully!', 'success');
     } catch (error) {
       console.error('Error compiling PDF:', error);
-      alert('Failed to compile and export the modified PDF.');
+      showToast('Failed to compile and export the PDF.', 'error');
     } finally {
       setIsPdfLoading(false);
     }
   };
 
-  // Crop handlers
-  const handleInitCrop = () => {
+  // Crop handlers — now uses visual crop overlay via custom events
+  const handleStartCrop = () => {
     if (!selectedElement) return;
-    updateElement(selectedElement.id, {
-      crop: { x: 0, y: 0, width: naturalSize.width, height: naturalSize.height },
-    });
+    window.dispatchEvent(new CustomEvent('crop-control', {
+      detail: { elementId: selectedElement.id, action: 'start-crop' },
+    }));
+    setBottomSheet(null); // Close inspector on mobile to show the crop overlay
   };
 
-  const handleCropChange = (field: string, value: number) => {
-    if (!selectedElement || !selectedElement.crop) return;
-    const newCrop = { ...selectedElement.crop, [field]: value };
-    // Clamp values
-    newCrop.x = Math.max(0, Math.min(newCrop.x, naturalSize.width - 20));
-    newCrop.y = Math.max(0, Math.min(newCrop.y, naturalSize.height - 20));
-    newCrop.width = Math.max(20, Math.min(newCrop.width, naturalSize.width - newCrop.x));
-    newCrop.height = Math.max(20, Math.min(newCrop.height, naturalSize.height - newCrop.y));
-    updateElement(selectedElement.id, { crop: newCrop });
+  const handleResetCrop = () => {
+    if (!selectedElement) return;
+    updateElement(selectedElement.id, { crop: null });
+    showToast('Crop reset', 'info');
   };
 
   // ─── RENDER ──────────────────────────────────
 
+  // Sidebar content pieces (reusable for both desktop sidebar and mobile bottom sheets)
+  const renderPromptTab = () => (
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">Username</label>
+        <input type="text" value={settings.username} onChange={(e) => updateSettings({ username: e.target.value })} className="w-full glass-input text-sm" />
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">Hostname</label>
+        <input type="text" value={settings.hostname} onChange={(e) => updateSettings({ hostname: e.target.value })} className="w-full glass-input text-sm" />
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">Directory Path</label>
+        <input type="text" value={settings.currentPath} onChange={(e) => updateSettings({ currentPath: e.target.value })} className="w-full glass-input text-sm" />
+      </div>
+    </div>
+  );
+
+  const renderStyleTab = () => (
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">Terminal Theme</label>
+        <select value={settings.themeId} onChange={(e) => updateSettings({ themeId: e.target.value })} className="w-full glass-input text-sm bg-slate-950 cursor-pointer">
+          {Object.values(THEME_PRESETS).map((t) => (
+            <option key={t.id} value={t.id} className="bg-slate-950">{t.name}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">Font Family</label>
+        <select value={settings.fontFamily} onChange={(e) => updateSettings({ fontFamily: e.target.value })} className="w-full glass-input text-sm bg-slate-950 cursor-pointer">
+          <option value="Ubuntu Mono" className="bg-slate-950">Ubuntu Mono</option>
+          <option value="JetBrains Mono" className="bg-slate-950">JetBrains Mono</option>
+          <option value="Fira Code" className="bg-slate-950">Fira Code</option>
+          <option value="monospace" className="bg-slate-950">System Monospace</option>
+        </select>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex justify-between text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+          <span>Font Size</span><span className="text-indigo-400">{settings.fontSize}px</span>
+        </div>
+        <input type="range" min={12} max={24} value={settings.fontSize} onChange={(e) => updateSettings({ fontSize: Number(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex justify-between text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+          <span>Window Padding</span><span className="text-indigo-400">{settings.padding}px</span>
+        </div>
+        <input type="range" min={8} max={48} value={settings.padding} onChange={(e) => updateSettings({ padding: Number(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
+      </div>
+
+      <div className="flex items-center justify-between py-2 border-t border-slate-800/40">
+        <span className="text-xs text-slate-300">Auto Height</span>
+        <input type="checkbox" checked={settings.isAutoHeight} onChange={(e) => updateSettings({ isAutoHeight: e.target.checked })} className="w-5 h-5 rounded accent-indigo-500 cursor-pointer" />
+      </div>
+
+      {!settings.isAutoHeight && (
+        <div className="space-y-2">
+          <div className="flex justify-between text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+            <span>Window Height</span><span className="text-indigo-400">{settings.customHeight}px</span>
+          </div>
+          <input type="range" min={200} max={800} value={settings.customHeight} onChange={(e) => updateSettings({ customHeight: Number(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
+        </div>
+      )}
+
+      <div className="flex items-center justify-between py-2 border-t border-slate-800/40">
+        <span className="text-xs text-slate-300">Window Controls</span>
+        <input type="checkbox" checked={settings.showWindowControls} onChange={(e) => updateSettings({ showWindowControls: e.target.checked })} className="w-5 h-5 rounded accent-indigo-500 cursor-pointer" />
+      </div>
+    </div>
+  );
+
+  const renderInteractionsTab = () => (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <span className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">Interactive Rows</span>
+        <button onClick={handleAddDefaultInteraction} className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-3 rounded-lg flex items-center gap-1.5 transition-all tap-bounce touch-btn-sm">
+          <Plus className="h-3.5 w-3.5" /> Add Row
+        </button>
+      </div>
+      <div className="space-y-3">
+        {interactions.map((item, idx) => (
+          <div key={item.id} className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl space-y-2.5 relative">
+            <div className="flex justify-between items-center">
+              <span className="text-[11px] font-bold text-slate-500">#{idx + 1}</span>
+              <div className="flex items-center gap-0.5">
+                <button disabled={idx === 0} onClick={() => reorderInteractions(idx, idx - 1)} className="p-2 hover:text-indigo-400 disabled:opacity-30 touch-btn-sm" title="Move Up"><MoveUp className="h-4 w-4" /></button>
+                <button disabled={idx === interactions.length - 1} onClick={() => reorderInteractions(idx, idx + 1)} className="p-2 hover:text-indigo-400 disabled:opacity-30 touch-btn-sm" title="Move Down"><MoveDown className="h-4 w-4" /></button>
+                <button onClick={() => duplicateInteraction(item.id)} className="p-2 hover:text-indigo-400 touch-btn-sm" title="Duplicate"><Copy className="h-4 w-4" /></button>
+                <button onClick={() => deleteInteraction(item.id)} className="p-2 hover:text-red-400 touch-btn-sm" title="Delete"><Trash2 className="h-4 w-4" /></button>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <input type="text" placeholder="Command..." value={item.command} onChange={(e) => updateInteraction(item.id, e.target.value, item.output)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2.5 text-sm font-mono" />
+              <textarea placeholder="Output (optional)..." value={item.output || ''} onChange={(e) => updateInteraction(item.id, item.command, e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2.5 text-sm font-mono h-20 resize-none" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderElementInspector = () => {
+    if (!selectedElement) return <p className="text-sm text-slate-500 text-center py-4">No element selected</p>;
+    return (
+      <div className="space-y-4">
+        {/* Quick actions */}
+        <div className="grid grid-cols-3 gap-2">
+          <button onClick={() => updateElement(selectedElement.id, { isLocked: !selectedElement.isLocked })} className={`py-3 rounded-xl text-xs font-bold uppercase border transition-all flex flex-col items-center justify-center gap-1 tap-bounce ${selectedElement.isLocked ? 'bg-amber-600/10 border-amber-500/30 text-amber-400' : 'bg-slate-950/40 border-slate-800 text-slate-400'}`}>
+            {selectedElement.isLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+            {selectedElement.isLocked ? 'Locked' : 'Unlocked'}
+          </button>
+          <button onClick={() => duplicateElement(selectedElement.id)} className="py-3 rounded-xl text-xs font-bold uppercase border bg-slate-950/40 border-slate-800 text-slate-400 transition-all flex flex-col items-center justify-center gap-1 tap-bounce">
+            <Copy className="h-4 w-4" /> Duplicate
+          </button>
+          <button onClick={() => { deleteElement(selectedElement.id); setBottomSheet(null); }} className="py-3 rounded-xl text-xs font-bold uppercase border bg-red-950/30 border-red-900/40 text-red-400 transition-all flex flex-col items-center justify-center gap-1 tap-bounce">
+            <Trash2 className="h-4 w-4" /> Delete
+          </button>
+        </div>
+
+        {/* Layer controls */}
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={() => bringToFront(selectedElement.id)} className="py-2.5 rounded-xl text-xs font-bold uppercase border bg-slate-950/40 border-slate-800 text-slate-400 hover:text-indigo-400 transition-all flex items-center justify-center gap-1.5 tap-bounce">
+            <Layers className="h-4 w-4" /> Front
+          </button>
+          <button onClick={() => sendToBack(selectedElement.id)} className="py-2.5 rounded-xl text-xs font-bold uppercase border bg-slate-950/40 border-slate-800 text-slate-400 hover:text-indigo-400 transition-all flex items-center justify-center gap-1.5 tap-bounce">
+            <Layers className="h-4 w-4 rotate-180" /> Back
+          </button>
+        </div>
+
+        {/* Opacity */}
+        <div className="space-y-2">
+          <div className="flex justify-between text-[11px] font-bold text-slate-400 uppercase"><span>Opacity</span><span className="text-indigo-400">{Math.round(selectedElement.opacity * 100)}%</span></div>
+          <input type="range" min={0.1} max={1.0} step={0.05} value={selectedElement.opacity} onChange={(e) => updateElement(selectedElement.id, { opacity: Number(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
+        </div>
+
+        {/* Crop controls */}
+        <div className="pt-3 border-t border-slate-800/40 space-y-3">
+          <div className="flex justify-between items-center">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><Crop className="h-3.5 w-3.5" /> Crop</span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleStartCrop}
+              className="flex-1 py-3 rounded-xl text-xs font-bold uppercase bg-indigo-600/10 border border-indigo-500/30 text-indigo-400 hover:bg-indigo-600/20 transition-all flex items-center justify-center gap-1.5 tap-bounce"
+            >
+              <Crop className="h-4 w-4" /> {selectedElement.crop ? 'Adjust Crop' : 'Start Crop'}
+            </button>
+            {selectedElement.crop && (
+              <button
+                onClick={handleResetCrop}
+                className="py-3 px-4 rounded-xl text-xs font-bold uppercase border bg-red-950/30 border-red-900/40 text-red-400 transition-all flex items-center justify-center gap-1.5 tap-bounce"
+              >
+                <RotateCcw className="h-4 w-4" /> Reset
+              </button>
+            )}
+          </div>
+          {selectedElement.crop && (
+            <p className="text-[10px] text-slate-500">
+              Cropped: {Math.round(selectedElement.crop.width)}×{Math.round(selectedElement.crop.height)}px from ({Math.round(selectedElement.crop.x)}, {Math.round(selectedElement.crop.y)})
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 font-sans">
-      {/* ═══════ LEFT SIDEBAR ═══════ */}
-      <aside className="w-80 border-r border-slate-800/80 bg-slate-900/60 backdrop-blur-md flex flex-col z-10">
+    <div className="flex h-screen h-[100dvh] w-screen overflow-hidden bg-slate-950 text-slate-100 font-sans">
+      {/* Toast Notifications */}
+      <ToastContainer toasts={toasts} />
+
+      {/* ═══════ DESKTOP SIDEBAR (hidden on mobile) ═══════ */}
+      <aside className="hidden lg:flex w-80 border-r border-slate-800/80 bg-slate-900/60 backdrop-blur-md flex-col z-10">
         {/* Sidebar Header */}
         <div className="p-6 border-b border-slate-800/80 flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
@@ -319,118 +610,19 @@ export default function App() {
           </button>
         </div>
 
-        {/* ═══════ TERMINAL MODE SIDEBAR ═══════ */}
+        {/* ═══════ TERMINAL MODE DESKTOP SIDEBAR ═══════ */}
         {activeMode === 'terminal' && (
           <>
             <div className="flex border-b border-slate-800/80 text-xs px-2 pt-2">
-              <button onClick={() => setActiveTab('prompt')} className={`flex-1 pb-2 font-medium border-b-2 transition-all ${activeTab === 'prompt' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>Prompt</button>
-              <button onClick={() => setActiveTab('style')} className={`flex-1 pb-2 font-medium border-b-2 transition-all ${activeTab === 'style' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>Style</button>
-              <button onClick={() => setActiveTab('sequence')} className={`flex-1 pb-2 font-medium border-b-2 transition-all ${activeTab === 'sequence' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>Interactions</button>
+              <button onClick={() => setBottomSheet('prompt')} className={`flex-1 pb-2 font-medium border-b-2 transition-all ${bottomSheet === 'prompt' || (!bottomSheet && true) ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>Prompt</button>
+              <button onClick={() => setBottomSheet('style')} className={`flex-1 pb-2 font-medium border-b-2 transition-all ${bottomSheet === 'style' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>Style</button>
+              <button onClick={() => setBottomSheet('interactions')} className={`flex-1 pb-2 font-medium border-b-2 transition-all ${bottomSheet === 'interactions' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>Interactions</button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-5 space-y-5">
-              {activeTab === 'prompt' && (
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Username</label>
-                    <input type="text" value={settings.username} onChange={(e) => updateSettings({ username: e.target.value })} className="w-full glass-input text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Hostname</label>
-                    <input type="text" value={settings.hostname} onChange={(e) => updateSettings({ hostname: e.target.value })} className="w-full glass-input text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Directory Path</label>
-                    <input type="text" value={settings.currentPath} onChange={(e) => updateSettings({ currentPath: e.target.value })} className="w-full glass-input text-sm" />
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'style' && (
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Terminal Theme</label>
-                    <select value={settings.themeId} onChange={(e) => updateSettings({ themeId: e.target.value })} className="w-full glass-input text-sm bg-slate-950 cursor-pointer">
-                      {Object.values(THEME_PRESETS).map((t) => (
-                        <option key={t.id} value={t.id} className="bg-slate-950">{t.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Font Family</label>
-                    <select value={settings.fontFamily} onChange={(e) => updateSettings({ fontFamily: e.target.value })} className="w-full glass-input text-sm bg-slate-950 cursor-pointer">
-                      <option value="Ubuntu Mono" className="bg-slate-950">Ubuntu Mono</option>
-                      <option value="JetBrains Mono" className="bg-slate-950">JetBrains Mono</option>
-                      <option value="Fira Code" className="bg-slate-950">Fira Code</option>
-                      <option value="monospace" className="bg-slate-950">System Monospace</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                      <span>Font Size</span><span className="text-indigo-400">{settings.fontSize}px</span>
-                    </div>
-                    <input type="range" min={12} max={24} value={settings.fontSize} onChange={(e) => updateSettings({ fontSize: Number(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                      <span>Window Padding</span><span className="text-indigo-400">{settings.padding}px</span>
-                    </div>
-                    <input type="range" min={8} max={48} value={settings.padding} onChange={(e) => updateSettings({ padding: Number(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
-                  </div>
-
-                  <div className="flex items-center justify-between py-2 border-t border-slate-800/40">
-                    <span className="text-xs text-slate-300">Auto Height</span>
-                    <input type="checkbox" checked={settings.isAutoHeight} onChange={(e) => updateSettings({ isAutoHeight: e.target.checked })} className="w-4 h-4 rounded accent-indigo-500 cursor-pointer" />
-                  </div>
-
-                  {!settings.isAutoHeight && (
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                        <span>Window Height</span><span className="text-indigo-400">{settings.customHeight}px</span>
-                      </div>
-                      <input type="range" min={200} max={800} value={settings.customHeight} onChange={(e) => updateSettings({ customHeight: Number(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between py-2 border-t border-slate-800/40">
-                    <span className="text-xs text-slate-300">Window Controls</span>
-                    <input type="checkbox" checked={settings.showWindowControls} onChange={(e) => updateSettings({ showWindowControls: e.target.checked })} className="w-4 h-4 rounded accent-indigo-500 cursor-pointer" />
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'sequence' && (
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Interactive Rows</span>
-                    <button onClick={handleAddDefaultInteraction} className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-1 px-2 rounded-md flex items-center gap-1 transition-all">
-                      <Plus className="h-3 w-3" /> Add Row
-                    </button>
-                  </div>
-                  <div className="space-y-3">
-                    {interactions.map((item, idx) => (
-                      <div key={item.id} className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-lg space-y-2 relative group">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[10px] font-bold text-slate-500">#{idx + 1}</span>
-                          <div className="flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                            <button disabled={idx === 0} onClick={() => reorderInteractions(idx, idx - 1)} className="p-1 hover:text-indigo-400 disabled:opacity-30" title="Move Up"><MoveUp className="h-3 w-3" /></button>
-                            <button disabled={idx === interactions.length - 1} onClick={() => reorderInteractions(idx, idx + 1)} className="p-1 hover:text-indigo-400 disabled:opacity-30" title="Move Down"><MoveDown className="h-3 w-3" /></button>
-                            <button onClick={() => duplicateInteraction(item.id)} className="p-1 hover:text-indigo-400" title="Duplicate"><Copy className="h-3 w-3" /></button>
-                            <button onClick={() => deleteInteraction(item.id)} className="p-1 hover:text-red-400" title="Delete"><Trash2 className="h-3 w-3" /></button>
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <input type="text" placeholder="Command..." value={item.command} onChange={(e) => updateInteraction(item.id, e.target.value, item.output)} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs font-mono" />
-                          <textarea placeholder="Output (optional)..." value={item.output || ''} onChange={(e) => updateInteraction(item.id, item.command, e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs font-mono h-16 resize-none" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {(bottomSheet === 'style') ? renderStyleTab() :
+               (bottomSheet === 'interactions') ? renderInteractionsTab() :
+               renderPromptTab()}
             </div>
 
             {/* Sidebar Footer */}
@@ -444,7 +636,7 @@ export default function App() {
           </>
         )}
 
-        {/* ═══════ PDF MODE SIDEBAR ═══════ */}
+        {/* ═══════ PDF MODE DESKTOP SIDEBAR ═══════ */}
         {activeMode === 'pdf' && (
           <div className="flex-1 p-5 space-y-5 flex flex-col justify-start overflow-y-auto">
             {isPdfLoading ? (
@@ -488,7 +680,7 @@ export default function App() {
                   <input type="file" accept=".pdf" className="hidden" onChange={handleSidebarFileChange} />
                 </label>
 
-                {/* ─── Snapshot Gallery ─── */}
+                {/* Snapshot Gallery */}
                 <div className="space-y-2 pt-4 border-t border-slate-800/40">
                   <span className="text-[10px] font-bold tracking-wider text-indigo-400 uppercase">Snapshot Gallery</span>
                   {savedSnapshots.length === 0 ? (
@@ -512,78 +704,14 @@ export default function App() {
                   )}
                 </div>
 
-                {/* ─── Selected Element Inspector ─── */}
+                {/* Selected Element Inspector (desktop) */}
                 {selectedElement && (
                   <div className="space-y-3 pt-4 border-t border-slate-800/40">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-bold tracking-wider text-indigo-400 uppercase">Element Inspector</span>
                       <button onClick={() => setSelectedElementId(null)} className="p-0.5 hover:text-red-400 text-slate-500"><X className="h-3.5 w-3.5" /></button>
                     </div>
-
-                    {/* Quick actions */}
-                    <div className="flex gap-1">
-                      <button onClick={() => updateElement(selectedElement.id, { isLocked: !selectedElement.isLocked })} className={`flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase border transition-all flex items-center justify-center gap-1 ${selectedElement.isLocked ? 'bg-amber-600/10 border-amber-500/30 text-amber-400' : 'bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200'}`}>
-                        {selectedElement.isLocked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
-                        {selectedElement.isLocked ? 'Locked' : 'Unlocked'}
-                      </button>
-                      <button onClick={() => duplicateElement(selectedElement.id)} className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase border bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200 transition-all flex items-center justify-center gap-1">
-                        <Copy className="h-3 w-3" /> Duplicate
-                      </button>
-                      <button onClick={() => deleteElement(selectedElement.id)} className="py-1.5 px-2 rounded-md text-[10px] font-bold uppercase border bg-red-950/30 border-red-900/40 text-red-400 hover:text-red-300 transition-all">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
-
-                    {/* Layer controls */}
-                    <div className="flex gap-1">
-                      <button onClick={() => bringToFront(selectedElement.id)} className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase border bg-slate-950/40 border-slate-800 text-slate-400 hover:text-indigo-400 transition-all flex items-center justify-center gap-1">
-                        <Layers className="h-3 w-3" /> Front
-                      </button>
-                      <button onClick={() => sendToBack(selectedElement.id)} className="flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase border bg-slate-950/40 border-slate-800 text-slate-400 hover:text-indigo-400 transition-all flex items-center justify-center gap-1">
-                        <Layers className="h-3 w-3 rotate-180" /> Back
-                      </button>
-                    </div>
-
-                    {/* Opacity */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase"><span>Opacity</span><span className="text-indigo-400">{Math.round(selectedElement.opacity * 100)}%</span></div>
-                      <input type="range" min={0.1} max={1.0} step={0.05} value={selectedElement.opacity} onChange={(e) => updateElement(selectedElement.id, { opacity: Number(e.target.value) })} className="w-full accent-indigo-500 cursor-pointer" />
-                    </div>
-
-                    {/* ─── CROP CONTROLS ─── */}
-                    <div className="pt-3 border-t border-slate-800/40 space-y-3">
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1"><Crop className="h-3 w-3" /> Clip / Crop</span>
-                        {selectedElement.crop ? (
-                          <button onClick={() => updateElement(selectedElement.id, { crop: null })} className="text-[10px] text-red-400 hover:text-red-300 font-bold uppercase transition-colors flex items-center gap-1">
-                            <RotateCcw className="h-3 w-3" /> Reset
-                          </button>
-                        ) : (
-                          <button onClick={handleInitCrop} className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold uppercase transition-colors">Enable</button>
-                        )}
-                      </div>
-
-                      {selectedElement.crop && (
-                        <div className="space-y-2.5 pl-1">
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-[10px] font-semibold text-slate-500"><span>Clip Left</span><span>{Math.round(selectedElement.crop.x)}px</span></div>
-                            <input type="range" min={0} max={naturalSize.width - 20} value={selectedElement.crop.x} onChange={(e) => handleCropChange('x', Number(e.target.value))} className="w-full accent-indigo-500 cursor-pointer" />
-                          </div>
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-[10px] font-semibold text-slate-500"><span>Clip Top</span><span>{Math.round(selectedElement.crop.y)}px</span></div>
-                            <input type="range" min={0} max={naturalSize.height - 20} value={selectedElement.crop.y} onChange={(e) => handleCropChange('y', Number(e.target.value))} className="w-full accent-indigo-500 cursor-pointer" />
-                          </div>
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-[10px] font-semibold text-slate-500"><span>Clip Width</span><span>{Math.round(selectedElement.crop.width)}px</span></div>
-                            <input type="range" min={20} max={naturalSize.width} value={selectedElement.crop.width} onChange={(e) => handleCropChange('width', Number(e.target.value))} className="w-full accent-indigo-500 cursor-pointer" />
-                          </div>
-                          <div className="space-y-1">
-                            <div className="flex justify-between text-[10px] font-semibold text-slate-500"><span>Clip Height</span><span>{Math.round(selectedElement.crop.height)}px</span></div>
-                            <input type="range" min={20} max={naturalSize.height} value={selectedElement.crop.height} onChange={(e) => handleCropChange('height', Number(e.target.value))} className="w-full accent-indigo-500 cursor-pointer" />
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    {renderElementInspector()}
                   </div>
                 )}
 
@@ -605,7 +733,9 @@ export default function App() {
                           }`}
                         >
                           <div className="min-w-0">
-                            <p className="text-xs text-slate-300 font-medium truncate">Snapshot #{idx + 1}</p>
+                            <p className="text-xs text-slate-300 font-medium truncate">
+                              {el.sourceType === 'upload' ? '📷 Image' : '💻 Snapshot'} #{idx + 1}
+                            </p>
                             <p className="text-[10px] text-slate-500 mt-0.5">Page {el.pageNumber} • {el.isLocked ? '🔒' : '🔓'} • {el.crop ? '✂️ Cropped' : 'Full'}</p>
                           </div>
                           <button onClick={(ev) => { ev.stopPropagation(); deleteElement(el.id); }} className="p-1 hover:text-red-400 transition-colors text-slate-500 shrink-0" title="Delete">
@@ -627,8 +757,8 @@ export default function App() {
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/15 via-slate-950/0 to-slate-950/0 pointer-events-none" />
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#0f172a_1px,transparent_1px),linear-gradient(to_bottom,#0f172a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-30 pointer-events-none" />
 
-        {/* Header */}
-        <header className="h-16 border-b border-slate-800/80 bg-slate-950/60 backdrop-blur-md flex items-center justify-between px-8 z-10 shrink-0">
+        {/* Header — Desktop only */}
+        <header className="hidden lg:flex h-16 border-b border-slate-800/80 bg-slate-950/60 backdrop-blur-md items-center justify-between px-8 z-10 shrink-0">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-slate-400">Workspace /</span>
             <span className="text-xs font-semibold text-slate-200 uppercase tracking-wide">
@@ -661,11 +791,45 @@ export default function App() {
           </div>
         </header>
 
+        {/* Mobile Header */}
+        <header className="lg:hidden h-14 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md flex items-center justify-between px-4 z-10 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-tr from-indigo-500 to-violet-600 flex items-center justify-center">
+              <TerminalIcon className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <h1 className="font-bold text-xs leading-none tracking-wide uppercase text-slate-200">
+                {activeMode === 'terminal' ? 'Terminal' : 'PDF Editor'}
+              </h1>
+              <p className="text-[10px] text-slate-500 mt-0.5 font-medium">Lab Studio</p>
+            </div>
+          </div>
+          
+          <div className="flex gap-1.5">
+            {activeMode === 'terminal' && (
+              <>
+                <button onClick={undo} disabled={history.past.length === 0} className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-lg text-slate-400 disabled:opacity-30 touch-btn-sm">
+                  <Undo2 className="h-4 w-4" />
+                </button>
+                <button onClick={redo} disabled={history.future.length === 0} className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-lg text-slate-400 disabled:opacity-30 touch-btn-sm">
+                  <Redo2 className="h-4 w-4" />
+                </button>
+              </>
+            )}
+            {activeMode === 'pdf' && pdfDoc.file && (
+              <button onClick={handleExportPdf} disabled={isPdfLoading} className="py-2 px-3.5 rounded-lg bg-indigo-600 text-xs font-semibold text-white tap-bounce touch-btn-sm">
+                {isPdfLoading ? '...' : 'Export'}
+              </button>
+            )}
+          </div>
+        </header>
+
         {/* Workspace View */}
-        <div className="flex-1 flex items-center justify-center p-8 overflow-auto">
+        <div className="flex-1 flex items-center justify-center p-4 lg:p-8 overflow-auto pb-20 lg:pb-8">
           {activeMode === 'terminal' ? (
-            <div className="flex flex-col items-center">
-              <div className="mb-4 text-xs text-slate-500 font-semibold flex items-center gap-3">
+            <div className="flex flex-col items-center w-full">
+              {/* Info bar - desktop only */}
+              <div className="hidden lg:flex mb-4 text-xs text-slate-500 font-semibold items-center gap-3">
                 <span>Viewport: <strong className="text-slate-300">{settings.customWidth}px</strong></span>
                 <span className="h-1.5 w-1.5 bg-slate-800 rounded-full" />
                 <span>Font: <strong className="text-slate-300">{settings.fontFamily}</strong></span>
@@ -674,75 +838,77 @@ export default function App() {
               </div>
 
               {/* Simulated Ubuntu GNOME Window Frame */}
-              <div 
-                id="terminal-render-target"
-                className="rounded-xl shadow-2xl transition-all border overflow-hidden"
-                style={{
-                  width: `${settings.customWidth}px`,
-                  minHeight: settings.isAutoHeight ? 'auto' : `${settings.customHeight}px`,
-                  backgroundColor: activeTheme.backgroundColor,
-                  borderColor: activeTheme.headerBackground,
-                  color: activeTheme.textColor,
-                  fontFamily: `"${settings.fontFamily}", monospace`,
-                  fontSize: `${settings.fontSize}px`,
-                }}
-              >
-                {/* Terminal Header */}
-                {settings.showWindowControls && (
-                  <div className="h-9 px-4 flex items-center justify-between border-b" style={{ backgroundColor: activeTheme.headerBackground, borderColor: activeTheme.backgroundColor }}>
-                    <div className="flex gap-2">
-                      {activeTheme.buttonStyle === 'ubuntu' ? (
-                        <>
-                          <div className="h-3.5 w-3.5 rounded-full bg-[#f1543f] flex items-center justify-center text-[8px] font-bold text-slate-900 cursor-pointer">×</div>
-                          <div className="h-3.5 w-3.5 rounded-full bg-[#3d3d3d] flex items-center justify-center text-[8px] font-bold text-slate-400 cursor-pointer">-</div>
-                          <div className="h-3.5 w-3.5 rounded-full bg-[#3d3d3d] flex items-center justify-center text-[8px] font-bold text-slate-400 cursor-pointer">▢</div>
-                        </>
-                      ) : activeTheme.buttonStyle === 'macos' ? (
-                        <>
-                          <div className="h-3 w-3 rounded-full bg-[#ff5f56]" />
-                          <div className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
-                          <div className="h-3 w-3 rounded-full bg-[#27c93f]" />
-                        </>
-                      ) : (
-                        <>
-                          <div className="h-2 w-2 rounded-full bg-slate-700" />
-                          <div className="h-2 w-2 rounded-full bg-slate-700" />
-                          <div className="h-2 w-2 rounded-full bg-slate-700" />
-                        </>
-                      )}
-                    </div>
-                    <span className="text-xs font-semibold select-none" style={{ color: activeTheme.headerTextColor }}>
-                      {settings.username}@{settings.hostname}: {settings.currentPath}
-                    </span>
-                    <div className="w-10" />
-                  </div>
-                )}
-
-                {/* Terminal Body */}
-                <div className="text-left font-mono select-text" style={{ padding: `${settings.padding}px`, lineHeight: '1.5', backgroundColor: activeTheme.backgroundColor }}>
-                  {interactions.map((item) => (
-                    <div key={item.id}>
-                      <div className="flex flex-wrap items-center">
-                        <span style={{ color: activeTheme.promptUserHostColor }}>{settings.username}@{settings.hostname}</span>
-                        <span style={{ color: activeTheme.promptSeparatorColor }}>:</span>
-                        <span style={{ color: activeTheme.promptPathColor }}>{settings.currentPath}</span>
-                        <span style={{ color: activeTheme.promptSymbolColor }} className="mr-2">$</span>
-                        <span>{item.command}</span>
+              <div className="w-full overflow-x-auto flex justify-center">
+                <div 
+                  id="terminal-render-target"
+                  className="rounded-xl shadow-2xl transition-all border overflow-hidden shrink-0"
+                  style={{
+                    width: `${settings.customWidth}px`,
+                    minHeight: settings.isAutoHeight ? 'auto' : `${settings.customHeight}px`,
+                    backgroundColor: activeTheme.backgroundColor,
+                    borderColor: activeTheme.headerBackground,
+                    color: activeTheme.textColor,
+                    fontFamily: `"${settings.fontFamily}", monospace`,
+                    fontSize: `${settings.fontSize}px`,
+                  }}
+                >
+                  {/* Terminal Header */}
+                  {settings.showWindowControls && (
+                    <div className="h-9 px-4 flex items-center justify-between border-b" style={{ backgroundColor: activeTheme.headerBackground, borderColor: activeTheme.backgroundColor }}>
+                      <div className="flex gap-2">
+                        {activeTheme.buttonStyle === 'ubuntu' ? (
+                          <>
+                            <div className="h-3.5 w-3.5 rounded-full bg-[#f1543f] flex items-center justify-center text-[8px] font-bold text-slate-900 cursor-pointer">×</div>
+                            <div className="h-3.5 w-3.5 rounded-full bg-[#3d3d3d] flex items-center justify-center text-[8px] font-bold text-slate-400 cursor-pointer">-</div>
+                            <div className="h-3.5 w-3.5 rounded-full bg-[#3d3d3d] flex items-center justify-center text-[8px] font-bold text-slate-400 cursor-pointer">▢</div>
+                          </>
+                        ) : activeTheme.buttonStyle === 'macos' ? (
+                          <>
+                            <div className="h-3 w-3 rounded-full bg-[#ff5f56]" />
+                            <div className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
+                            <div className="h-3 w-3 rounded-full bg-[#27c93f]" />
+                          </>
+                        ) : (
+                          <>
+                            <div className="h-2 w-2 rounded-full bg-slate-700" />
+                            <div className="h-2 w-2 rounded-full bg-slate-700" />
+                            <div className="h-2 w-2 rounded-full bg-slate-700" />
+                          </>
+                        )}
                       </div>
-                      {item.output ? <div className="whitespace-pre pl-1 opacity-95">{item.output}</div> : null}
+                      <span className="text-xs font-semibold select-none" style={{ color: activeTheme.headerTextColor }}>
+                        {settings.username}@{settings.hostname}: {settings.currentPath}
+                      </span>
+                      <div className="w-10" />
                     </div>
-                  ))}
-                  <div className="flex items-center">
-                    <span style={{ color: activeTheme.promptUserHostColor }}>{settings.username}@{settings.hostname}</span>
-                    <span style={{ color: activeTheme.promptSeparatorColor }}>:</span>
-                    <span style={{ color: activeTheme.promptPathColor }}>{settings.currentPath}</span>
-                    <span style={{ color: activeTheme.promptSymbolColor }} className="mr-2">$</span>
-                    <span className={`inline-block w-2 h-4 ${settings.isBlinkingCursor ? 'animate-pulse' : ''}`} style={{ 
-                      backgroundColor: activeTheme.cursorColor,
-                      height: settings.cursorStyle === 'block' ? '1.1em' : '1px',
-                      width: settings.cursorStyle === 'beam' ? '2px' : '8px',
-                      marginTop: settings.cursorStyle === 'underline' ? '0.8em' : '0px',
-                    }} />
+                  )}
+
+                  {/* Terminal Body */}
+                  <div className="text-left font-mono select-text" style={{ padding: `${settings.padding}px`, lineHeight: '1.5', backgroundColor: activeTheme.backgroundColor }}>
+                    {interactions.map((item) => (
+                      <div key={item.id}>
+                        <div className="flex flex-wrap items-center">
+                          <span style={{ color: activeTheme.promptUserHostColor }}>{settings.username}@{settings.hostname}</span>
+                          <span style={{ color: activeTheme.promptSeparatorColor }}>:</span>
+                          <span style={{ color: activeTheme.promptPathColor }}>{settings.currentPath}</span>
+                          <span style={{ color: activeTheme.promptSymbolColor }} className="mr-2">$</span>
+                          <span>{item.command}</span>
+                        </div>
+                        {item.output ? <div className="whitespace-pre pl-1 opacity-95">{item.output}</div> : null}
+                      </div>
+                    ))}
+                    <div className="flex items-center">
+                      <span style={{ color: activeTheme.promptUserHostColor }}>{settings.username}@{settings.hostname}</span>
+                      <span style={{ color: activeTheme.promptSeparatorColor }}>:</span>
+                      <span style={{ color: activeTheme.promptPathColor }}>{settings.currentPath}</span>
+                      <span style={{ color: activeTheme.promptSymbolColor }} className="mr-2">$</span>
+                      <span className={`inline-block w-2 h-4 ${settings.isBlinkingCursor ? 'animate-pulse' : ''}`} style={{ 
+                        backgroundColor: activeTheme.cursorColor,
+                        height: settings.cursorStyle === 'block' ? '1.1em' : '1px',
+                        width: settings.cursorStyle === 'beam' ? '2px' : '8px',
+                        marginTop: settings.cursorStyle === 'underline' ? '0.8em' : '0px',
+                      }} />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -752,6 +918,284 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {/* ═══════ MOBILE BOTTOM TAB BAR ═══════ */}
+      <div className="lg:hidden bottom-tab-bar">
+        <div className="flex items-stretch">
+          {/* Tab: Terminal */}
+          <button
+            onClick={() => { setActiveMode('terminal'); setFabOpen(false); }}
+            className={`flex-1 flex flex-col items-center justify-center py-2.5 gap-1 transition-all tap-bounce ${
+              activeMode === 'terminal' ? 'text-indigo-400' : 'text-slate-500'
+            }`}
+          >
+            <TerminalIcon className="h-5 w-5" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Terminal</span>
+          </button>
+
+          {/* Tab: Settings / Controls */}
+          <button
+            onClick={() => {
+              if (activeMode === 'terminal') {
+                setBottomSheet(bottomSheet === 'terminal-settings' ? null : 'terminal-settings');
+              } else {
+                setBottomSheet(bottomSheet === 'pdf-settings' ? null : 'pdf-settings');
+              }
+              setFabOpen(false);
+            }}
+            className={`flex-1 flex flex-col items-center justify-center py-2.5 gap-1 transition-all tap-bounce ${
+              bottomSheet ? 'text-indigo-400' : 'text-slate-500'
+            }`}
+          >
+            <Settings2 className="h-5 w-5" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Controls</span>
+          </button>
+
+          {/* Tab: PDF Editor */}
+          <button
+            onClick={() => { setActiveMode('pdf'); setFabOpen(false); }}
+            className={`flex-1 flex flex-col items-center justify-center py-2.5 gap-1 transition-all tap-bounce ${
+              activeMode === 'pdf' ? 'text-indigo-400' : 'text-slate-500'
+            }`}
+          >
+            <FileText className="h-5 w-5" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">PDF</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ═══════ MOBILE FAB (Floating Action Button) ═══════ */}
+      <div className="lg:hidden">
+        {/* FAB Menu Items */}
+        <AnimatePresence>
+          {fabOpen && (
+            <motion.div
+              className="fixed right-4 z-30 flex flex-col gap-2"
+              style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              {activeMode === 'terminal' ? (
+                <>
+                  <motion.button
+                    onClick={handleInsertToPdf}
+                    className="fab-menu-item"
+                    initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ delay: 0.05 }}
+                  >
+                    <ArrowRight className="h-4 w-4 text-indigo-400" /> Insert to PDF
+                  </motion.button>
+                  <motion.button
+                    onClick={handleSaveSnapshot}
+                    className="fab-menu-item"
+                    initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ delay: 0.1 }}
+                  >
+                    <Camera className="h-4 w-4 text-emerald-400" /> Save Snapshot
+                  </motion.button>
+                  <motion.button
+                    onClick={handleDownloadPng}
+                    className="fab-menu-item"
+                    initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ delay: 0.15 }}
+                  >
+                    <Download className="h-4 w-4 text-slate-400" /> Download PNG
+                  </motion.button>
+                  <motion.button
+                    onClick={handleCopyImage}
+                    className="fab-menu-item"
+                    initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ delay: 0.2 }}
+                  >
+                    <Clipboard className="h-4 w-4 text-slate-400" /> Copy to Clipboard
+                  </motion.button>
+                </>
+              ) : (
+                pdfDoc.file && (
+                  <motion.button
+                    onClick={handleExportPdf}
+                    className="fab-menu-item"
+                    initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ delay: 0.05 }}
+                  >
+                    <Download className="h-4 w-4 text-indigo-400" /> Export PDF
+                  </motion.button>
+                )
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* FAB backdrop */}
+        {fabOpen && (
+          <div className="fixed inset-0 z-20" onClick={() => setFabOpen(false)} />
+        )}
+
+        {/* FAB Button */}
+        <button
+          onClick={() => setFabOpen(!fabOpen)}
+          className={`fab fab-primary h-14 w-14 z-30 transition-transform duration-200 ${fabOpen ? 'rotate-45' : ''}`}
+          style={{ bottom: 'calc(4.5rem + env(safe-area-inset-bottom, 0px))', right: '1rem' }}
+        >
+          <Plus className="h-6 w-6" />
+        </button>
+      </div>
+
+      {/* ═══════ MOBILE BOTTOM SHEETS ═══════ */}
+      <AnimatePresence>
+        {/* Terminal Settings Bottom Sheet */}
+        {bottomSheet === 'terminal-settings' && activeMode === 'terminal' && (
+          <BottomSheet
+            isOpen={true}
+            onClose={() => setBottomSheet(null)}
+            title="Terminal Controls"
+          >
+            {/* Sub-tabs inside the sheet */}
+            <div className="flex gap-2 mb-5 -mt-1">
+              {[
+                { id: 'prompt-sub', label: 'Prompt', icon: <Type className="h-3.5 w-3.5" /> },
+                { id: 'style-sub', label: 'Style', icon: <Palette className="h-3.5 w-3.5" /> },
+                { id: 'interactions-sub', label: 'Rows', icon: <List className="h-3.5 w-3.5" /> },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setBottomSheet(tab.id)}
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-bold uppercase border transition-all flex items-center justify-center gap-1.5 tap-bounce ${
+                    bottomSheet === tab.id ? 'bg-indigo-600/20 border-indigo-500/40 text-indigo-300' : 'bg-slate-950/40 border-slate-800 text-slate-500'
+                  }`}
+                >
+                  {tab.icon} {tab.label}
+                </button>
+              ))}
+            </div>
+            {renderPromptTab()}
+          </BottomSheet>
+        )}
+
+        {bottomSheet === 'prompt-sub' && (
+          <BottomSheet isOpen={true} onClose={() => setBottomSheet(null)} title="Prompt Settings">
+            {renderPromptTab()}
+          </BottomSheet>
+        )}
+
+        {bottomSheet === 'style-sub' && (
+          <BottomSheet isOpen={true} onClose={() => setBottomSheet(null)} title="Style Settings">
+            {renderStyleTab()}
+          </BottomSheet>
+        )}
+
+        {bottomSheet === 'interactions-sub' && (
+          <BottomSheet isOpen={true} onClose={() => setBottomSheet(null)} title="Interactions">
+            {renderInteractionsTab()}
+          </BottomSheet>
+        )}
+
+        {/* PDF Settings Bottom Sheet */}
+        {bottomSheet === 'pdf-settings' && activeMode === 'pdf' && (
+          <BottomSheet
+            isOpen={true}
+            onClose={() => setBottomSheet(null)}
+            title="PDF Controls"
+          >
+            <div className="space-y-4">
+              {!pdfDoc.file ? (
+                <div className="text-center py-6">
+                  <FileText className="h-10 w-10 text-slate-600 mx-auto mb-3" />
+                  <p className="text-sm text-slate-400 font-medium">No PDF loaded</p>
+                  <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm py-3 px-5 rounded-xl shadow-lg inline-block mt-3 tap-bounce">
+                    Upload PDF
+                    <input type="file" accept=".pdf" className="hidden" onChange={handleSidebarFileChange} />
+                  </label>
+                </div>
+              ) : (
+                <>
+                  <div className="p-4 bg-slate-950/40 border border-slate-800/80 rounded-xl">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-lg bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                        <FileText className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-slate-200 font-semibold truncate">{pdfDoc.file.name}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{(pdfDoc.file.size / 1024 / 1024).toFixed(2)} MB • {pdfDoc.numPages} Pages</p>
+                      </div>
+                      <button onClick={() => setPdfFile(null)} className="p-2 text-red-400 tap-bounce touch-btn-sm">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Snapshot Gallery */}
+                  <div className="space-y-2">
+                    <span className="text-[11px] font-bold tracking-wider text-indigo-400 uppercase">Snapshots ({savedSnapshots.length})</span>
+                    {savedSnapshots.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic py-2">No snapshots yet. Create them in Terminal mode.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2">
+                        {savedSnapshots.map((snap) => (
+                          <div key={snap.id} className="p-2 bg-slate-950/40 border border-slate-800/80 rounded-lg">
+                            <img src={snap.dataUrl} alt={snap.name} className="w-full h-16 object-contain rounded bg-slate-950 mb-1" />
+                            <div className="flex items-center justify-between">
+                              <p className="text-[10px] text-slate-300 font-medium truncate flex-1">{snap.name}</p>
+                              <button onClick={() => deleteSnapshot(snap.id)} className="p-1 text-slate-500 hover:text-red-400"><Trash2 className="h-3 w-3" /></button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Placed elements list */}
+                  <div className="space-y-2">
+                    <span className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">Elements ({elements.length})</span>
+                    {elements.length > 0 && (
+                      <div className="space-y-1.5">
+                        {elements.map((el, idx) => (
+                          <button
+                            key={el.id}
+                            onClick={() => { setSelectedElementId(el.id); setBottomSheet('inspector'); }}
+                            className={`w-full p-3 rounded-xl flex items-center justify-between transition-all text-left tap-bounce ${
+                              el.id === selectedElementId
+                                ? 'bg-indigo-600/10 border border-indigo-500/30'
+                                : 'bg-slate-950/40 border border-slate-800/80'
+                            }`}
+                          >
+                            <div>
+                              <p className="text-xs text-slate-300 font-medium">
+                                {el.sourceType === 'upload' ? '📷 Image' : '💻 Snapshot'} #{idx + 1}
+                              </p>
+                              <p className="text-[10px] text-slate-500 mt-0.5">Page {el.pageNumber} • {el.crop ? '✂️ Cropped' : 'Full'}</p>
+                            </div>
+                            <button onClick={(ev) => { ev.stopPropagation(); deleteElement(el.id); }} className="p-2 text-slate-500 hover:text-red-400 touch-btn-sm">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </BottomSheet>
+        )}
+
+        {/* Element Inspector Bottom Sheet (mobile) */}
+        {bottomSheet === 'inspector' && selectedElement && (
+          <BottomSheet
+            isOpen={true}
+            onClose={() => { setBottomSheet(null); setSelectedElementId(null); }}
+            title="Element Inspector"
+          >
+            {renderElementInspector()}
+          </BottomSheet>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

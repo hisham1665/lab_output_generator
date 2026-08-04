@@ -34,7 +34,10 @@ export interface SavedSnapshot {
 
 export interface CanvasElement {
   id: string;
-  snapshotId: string;
+  /** ID of the source snapshot (empty for user-uploaded images) */
+  snapshotId?: string;
+  /** Whether this element came from a terminal snapshot or a user upload */
+  sourceType: 'snapshot' | 'upload';
   dataUrl: string;
   x: number;
   y: number;

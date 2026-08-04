@@ -8,10 +8,21 @@
   body {
     @apply bg-slate-950 text-slate-100 font-sans antialiased selection:bg-indigo-500/30 selection:text-indigo-200 min-h-screen overflow-x-hidden;
     font-family: 'Inter', sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    overscroll-behavior: none;
+  }
+
+  /* Safe area insets for notched phones */
+  :root {
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sat: env(safe-area-inset-top, 0px);
+    --sal: env(safe-area-inset-left, 0px);
+    --sar: env(safe-area-inset-right, 0px);
   }
 }
 
-/* Glassmorphism custom utilities */
+/* ═══════ Glassmorphism utilities ═══════ */
 .glass-panel {
   @apply bg-slate-900/60 backdrop-blur-md border border-slate-800/80 shadow-xl;
 }
@@ -24,7 +35,159 @@
   @apply bg-slate-950/60 border border-slate-800/80 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-100 placeholder-slate-500 transition-all duration-200 outline-none rounded-md px-3 py-2;
 }
 
-/* Custom Scrollbars */
+/* ═══════ Mobile Touch Target Utilities ═══════ */
+.touch-btn {
+  @apply min-h-[44px] min-w-[44px] flex items-center justify-center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.touch-btn-sm {
+  @apply min-h-[36px] min-w-[36px] flex items-center justify-center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ═══════ Bottom Sheet ═══════ */
+.bottom-sheet-backdrop {
+  @apply fixed inset-0 bg-black/50 z-40;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.bottom-sheet {
+  @apply fixed bottom-0 left-0 right-0 z-50 bg-slate-900 border-t border-slate-700/60 rounded-t-2xl;
+  max-height: calc(90vh - var(--sab));
+  padding-bottom: calc(0.5rem + var(--sab));
+  animation: slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.bottom-sheet-handle {
+  @apply w-10 h-1 rounded-full bg-slate-600 mx-auto my-3;
+}
+
+/* ═══════ Bottom Tab Bar ═══════ */
+.bottom-tab-bar {
+  @apply fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800/80;
+  padding-bottom: var(--sab);
+}
+
+/* ═══════ Toast Notifications ═══════ */
+.toast-container {
+  @apply fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none;
+  width: min(90vw, 400px);
+}
+
+.toast {
+  @apply w-full py-3 px-4 rounded-xl text-sm font-medium shadow-2xl backdrop-blur-md pointer-events-auto;
+  animation: toastIn 0.35s cubic-bezier(0.21, 1.02, 0.73, 1);
+}
+
+.toast-success {
+  @apply bg-emerald-600/90 text-emerald-50 border border-emerald-500/40;
+}
+
+.toast-error {
+  @apply bg-red-600/90 text-red-50 border border-red-500/40;
+}
+
+.toast-info {
+  @apply bg-indigo-600/90 text-indigo-50 border border-indigo-500/40;
+}
+
+.toast-exit {
+  animation: toastOut 0.25s ease-in forwards;
+}
+
+/* ═══════ Floating Action Button ═══════ */
+.fab {
+  @apply fixed z-30 rounded-full shadow-2xl flex items-center justify-center transition-all duration-200 active:scale-95;
+}
+
+.fab-primary {
+  @apply bg-indigo-600 text-white shadow-indigo-600/30;
+}
+
+.fab-menu-item {
+  @apply flex items-center gap-3 bg-slate-800/95 backdrop-blur-md text-slate-200 rounded-xl px-4 py-3 shadow-xl border border-slate-700/50 text-sm font-medium whitespace-nowrap;
+  animation: fabItemIn 0.2s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+/* ═══════ Tap animation ═══════ */
+.tap-bounce {
+  @apply transition-transform duration-100 active:scale-[0.96];
+}
+
+/* ═══════ Crop Overlay ═══════ */
+.crop-handle {
+  @apply absolute bg-white border-2 border-indigo-500 rounded-sm z-50;
+  width: 14px;
+  height: 14px;
+}
+
+@media (pointer: coarse) {
+  .crop-handle {
+    width: 22px;
+    height: 22px;
+  }
+}
+
+.crop-toolbar {
+  @apply absolute -bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-slate-900/95 backdrop-blur-md border border-slate-700/60 rounded-xl px-3 py-2 shadow-2xl z-50;
+}
+
+/* ═══════ Keyframes ═══════ */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes slideDown {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toastOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.96);
+  }
+}
+
+@keyframes fabItemIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ═══════ Scrollbars ═══════ */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -36,4 +199,25 @@
 
 ::-webkit-scrollbar-thumb {
   @apply bg-slate-800 rounded-full hover:bg-slate-700 transition-colors;
+}
+
+/* Hide scrollbar on mobile for cleaner look */
+@media (max-width: 1023px) {
+  ::-webkit-scrollbar {
+    width: 3px;
+    height: 3px;
+  }
+}
+
+/* ═══════ Mobile-specific overrides ═══════ */
+@media (max-width: 1023px) {
+  .desktop-only {
+    display: none !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .mobile-only {
+    display: none !important;
+  }
 }

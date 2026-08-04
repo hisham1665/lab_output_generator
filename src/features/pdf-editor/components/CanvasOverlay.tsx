@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Stage, Layer, Image as KonvaImage, Transformer } from 'react-konva';
 import { useStore } from '../../../store/globalStore';
+import { CropOverlay } from './CropOverlay';
 import type { CanvasElement } from '../../../types';
 
 interface CanvasOverlayProps {
@@ -12,10 +13,11 @@ interface CanvasOverlayProps {
 const ImageElement: React.FC<{
   element: CanvasElement;
   isSelected: boolean;
+  isCropMode: boolean;
   zoomScale: number;
   onSelect: () => void;
   onChange: (newAttrs: Partial<CanvasElement>) => void;
-}> = ({ element, isSelected, zoomScale, onSelect, onChange }) => {
+}> = ({ element, isSelected, isCropMode, zoomScale, onSelect, onChange }) => {
   const shapeRef = useRef<any>(null);
   const trRef = useRef<any>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -29,11 +31,11 @@ const ImageElement: React.FC<{
   }, [element.dataUrl]);
 
   useEffect(() => {
-    if (isSelected && trRef.current && shapeRef.current) {
+    if (isSelected && !isCropMode && trRef.current && shapeRef.current) {
       trRef.current.nodes([shapeRef.current]);
       trRef.current.getLayer().batchDraw();
     }
-  }, [isSelected, zoomScale]);
+  }, [isSelected, isCropMode, zoomScale]);
 
   // Calculate the displayed dimensions
   const displayX = element.x * zoomScale;
@@ -51,7 +53,7 @@ const ImageElement: React.FC<{
     height: displayH,
     rotation: element.rotation,
     opacity: element.opacity,
-    draggable: !element.isLocked,
+    draggable: !element.isLocked && !isCropMode,
     onClick: onSelect,
     onTap: onSelect,
     onDblClick: () => onChange({ isLocked: !element.isLocked }),
@@ -92,7 +94,7 @@ const ImageElement: React.FC<{
   return (
     <>
       <KonvaImage {...imageProps} />
-      {isSelected && !element.isLocked && (
+      {isSelected && !element.isLocked && !isCropMode && (
         <Transformer
           ref={trRef}
           boundBoxFunc={(oldBox, newBox) => {
@@ -117,6 +119,40 @@ export const CanvasOverlay: React.FC<CanvasOverlayProps> = ({ pageNumber, width,
     deleteElement 
   } = useStore();
   const zoomScale = pdfDoc.zoomScale;
+
+  // Crop mode state: which element is currently being cropped
+  const [cropElementId, setCropElementId] = useState<string | null>(null);
+  const [cropNaturalSize, setCropNaturalSize] = useState({ width: 100, height: 100 });
+
+  // Expose crop mode controls via a global ref so the parent/App can activate crop mode
+  useEffect(() => {
+    const handler = (e: CustomEvent) => {
+      const { elementId, action } = e.detail;
+      if (action === 'start-crop') {
+        const el = elements.find((el) => el.id === elementId);
+        if (el) {
+          // Load natural size
+          const img = new window.Image();
+          img.src = el.dataUrl;
+          img.onload = () => {
+            setCropNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+            // Initialize crop to full image if not already set
+            if (!el.crop) {
+              updateElement(elementId, {
+                crop: { x: 0, y: 0, width: img.naturalWidth, height: img.naturalHeight },
+              });
+            }
+            setCropElementId(elementId);
+          };
+        }
+      } else if (action === 'cancel-crop') {
+        setCropElementId(null);
+      }
+    };
+
+    window.addEventListener('crop-control' as any, handler as any);
+    return () => window.removeEventListener('crop-control' as any, handler as any);
+  }, [elements, updateElement]);
 
   // Keyboard nudging and deletion shortcuts
   useEffect(() => {
@@ -144,12 +180,14 @@ export const CanvasOverlay: React.FC<CanvasOverlayProps> = ({ pageNumber, width,
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         deleteElement(selectedElementId);
+      } else if (e.key === 'Escape' && cropElementId) {
+        setCropElementId(null);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedElementId, elements, updateElement, deleteElement]);
+  }, [selectedElementId, elements, updateElement, deleteElement, cropElementId]);
 
   const pageElements = elements
     .filter((el) => el.pageNumber === pageNumber)
@@ -159,8 +197,11 @@ export const CanvasOverlay: React.FC<CanvasOverlayProps> = ({ pageNumber, width,
     const clickedOnEmpty = e.target === e.target.getStage();
     if (clickedOnEmpty) {
       setSelectedElementId(null);
+      setCropElementId(null);
     }
   };
+
+  const cropElement = cropElementId ? elements.find((el) => el.id === cropElementId) : null;
 
   return (
     <Stage
@@ -177,10 +218,32 @@ export const CanvasOverlay: React.FC<CanvasOverlayProps> = ({ pageNumber, width,
             element={el}
             zoomScale={zoomScale}
             isSelected={el.id === selectedElementId}
+            isCropMode={el.id === cropElementId}
             onSelect={() => setSelectedElementId(el.id)}
             onChange={(newAttrs) => updateElement(el.id, newAttrs)}
           />
         ))}
+
+        {/* Crop overlay for the active crop element */}
+        {cropElement && cropElement.pageNumber === pageNumber && (
+          <CropOverlay
+            element={cropElement}
+            zoomScale={zoomScale}
+            naturalWidth={cropNaturalSize.width}
+            naturalHeight={cropNaturalSize.height}
+            onCropChange={(newCrop) => {
+              updateElement(cropElement.id, { crop: newCrop });
+            }}
+            onApply={() => {
+              setCropElementId(null);
+              // Dispatch event to notify App that crop was applied
+              window.dispatchEvent(new CustomEvent('crop-applied', { detail: { elementId: cropElement.id } }));
+            }}
+            onCancel={() => {
+              setCropElementId(null);
+            }}
+          />
+        )}
       </Layer>
     </Stage>
   );
