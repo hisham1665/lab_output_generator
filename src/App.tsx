@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useStore } from './store/globalStore';
 import { THEME_PRESETS } from './features/themes';
 import { PageViewer } from './features/pdf-editor/components/PageViewer';
@@ -178,6 +178,149 @@ export default function App() {
   // Mobile UI state
   const [bottomSheet, setBottomSheet] = useState<string | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
+
+  // Terminal preview scaling for mobile
+  const terminalContainerRef = useRef<HTMLDivElement>(null);
+  const terminalRef = useRef<HTMLDivElement>(null);
+  const [mobileScale, setMobileScale] = useState(1);
+  const [terminalHeight, setTerminalHeight] = useState(0);
+
+  // Pinch-to-zoom & Pan state for mobile preview
+  const [userZoom, setUserZoom] = useState(1);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const lastTap = useRef(0);
+  
+  const gestureRef = useRef({
+    startDist: 0,
+    startZoom: 1,
+    startPan: { x: 0, y: 0 },
+    startPoints: [] as { x: number; y: number }[],
+    isDragging: false,
+    isPinching: false,
+  });
+
+  const getDistance = (t1: React.Touch, t2: React.Touch) => {
+    return Math.sqrt((t1.clientX - t2.clientX) ** 2 + (t1.clientY - t2.clientY) ** 2);
+  };
+
+  const getCenter = (t1: React.Touch, t2: React.Touch) => {
+    return {
+      x: (t1.clientX + t2.clientX) / 2,
+      y: (t1.clientY + t2.clientY) / 2,
+    };
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touches = e.touches;
+    
+    // Double tap to reset
+    const now = Date.now();
+    if (touches.length === 1) {
+      if (now - lastTap.current < 300) {
+        setUserZoom(1);
+        setPanX(0);
+        setPanY(0);
+        showToast('Zoom/Pan Reset', 'info');
+        lastTap.current = 0;
+        return;
+      }
+      lastTap.current = now;
+      
+      gestureRef.current.isDragging = true;
+      gestureRef.current.isPinching = false;
+      gestureRef.current.startPoints = [{ x: touches[0].clientX, y: touches[0].clientY }];
+      gestureRef.current.startPan = { x: panX, y: panY };
+    } else if (touches.length === 2) {
+      gestureRef.current.isDragging = false;
+      gestureRef.current.isPinching = true;
+      
+      const dist = getDistance(touches[0], touches[1]);
+      gestureRef.current.startDist = dist;
+      gestureRef.current.startZoom = userZoom;
+      gestureRef.current.startPan = { x: panX, y: panY };
+      
+      gestureRef.current.startPoints = [
+        { x: touches[0].clientX, y: touches[0].clientY },
+        { x: touches[1].clientX, y: touches[1].clientY }
+      ];
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const touches = e.touches;
+    
+    if (gestureRef.current.isDragging && touches.length === 1) {
+      const dx = touches[0].clientX - gestureRef.current.startPoints[0].x;
+      const dy = touches[0].clientY - gestureRef.current.startPoints[0].y;
+      
+      if (userZoom > 1) {
+        if (e.cancelable) e.preventDefault();
+        setPanX(gestureRef.current.startPan.x + dx);
+        setPanY(gestureRef.current.startPan.y + dy);
+      }
+    } else if (gestureRef.current.isPinching && touches.length === 2) {
+      if (e.cancelable) e.preventDefault();
+      
+      const dist = getDistance(touches[0], touches[1]);
+      const factor = dist / gestureRef.current.startDist;
+      const newZoom = Math.max(1, Math.min(gestureRef.current.startZoom * factor, 4));
+      
+      setUserZoom(newZoom);
+      
+      const currentCenter = getCenter(touches[0], touches[1]);
+      const initialCenter = getCenter(
+        { clientX: gestureRef.current.startPoints[0].x, clientY: gestureRef.current.startPoints[0].y } as any,
+        { clientX: gestureRef.current.startPoints[1].x, clientY: gestureRef.current.startPoints[1].y } as any
+      );
+      const dx = currentCenter.x - initialCenter.x;
+      const dy = currentCenter.y - initialCenter.y;
+      
+      setPanX(gestureRef.current.startPan.x + dx);
+      setPanY(gestureRef.current.startPan.y + dy);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    gestureRef.current.isDragging = false;
+    gestureRef.current.isPinching = false;
+  };
+
+  // Measure container width and compute scale
+  useEffect(() => {
+    const container = terminalContainerRef.current;
+    if (!container) return;
+
+    const updateScale = () => {
+      const containerWidth = container.clientWidth;
+      const terminalWidth = settings.customWidth;
+      if (containerWidth < terminalWidth) {
+        setMobileScale(containerWidth / terminalWidth);
+      } else {
+        setMobileScale(1);
+      }
+    };
+
+    updateScale();
+    const observer = new ResizeObserver(updateScale);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [settings.customWidth]);
+
+  // Measure actual terminal height for proper scaled layout
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+
+    const updateHeight = () => {
+      setTerminalHeight(terminal.offsetHeight);
+    };
+
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(terminal);
+    return () => observer.disconnect();
+  }, [interactions, settings]);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   
   const activeTheme = THEME_PRESETS[settings.themeId] || THEME_PRESETS.ubuntu;
@@ -837,77 +980,110 @@ export default function App() {
                 <span><strong className="text-emerald-400">{savedSnapshots.length}</strong> saved</span>
               </div>
 
-              {/* Simulated Ubuntu GNOME Window Frame */}
-              <div className="w-full overflow-x-auto flex justify-center">
-                <div 
-                  id="terminal-render-target"
-                  className="rounded-xl shadow-2xl transition-all border overflow-hidden shrink-0"
+              {/* Mobile scale indicator */}
+              {mobileScale < 1 && (
+                <div className="lg:hidden mb-3 text-[10px] text-slate-400 font-medium flex flex-col items-center gap-1 select-none">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-slate-800/80 px-2 py-0.5 rounded-full text-indigo-400">Scale: {Math.round(mobileScale * userZoom * 100)}%</span>
+                    <span>•</span>
+                    <span>{settings.customWidth}px viewport</span>
+                  </div>
+                  <span className="text-[9px] text-slate-500">Pinch with 2 fingers to zoom • Drag to move • Double tap to reset</span>
+                </div>
+              )}
+
+              {/* Terminal scaling wrapper — measures available width and scales the 800px terminal to fit */}
+              <div 
+                ref={terminalContainerRef} 
+                className="w-full flex justify-center overflow-hidden touch-none"
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                style={{
+                  touchAction: 'none',
+                  cursor: userZoom > 1 ? 'grab' : 'default',
+                }}
+              >
+                <div
                   style={{
+                    transform: `translate3d(${panX}px, ${panY}px, 0) scale(${mobileScale * userZoom})`,
+                    transformOrigin: 'top center',
                     width: `${settings.customWidth}px`,
-                    minHeight: settings.isAutoHeight ? 'auto' : `${settings.customHeight}px`,
-                    backgroundColor: activeTheme.backgroundColor,
-                    borderColor: activeTheme.headerBackground,
-                    color: activeTheme.textColor,
-                    fontFamily: `"${settings.fontFamily}", monospace`,
-                    fontSize: `${settings.fontSize}px`,
+                    height: `${terminalHeight * mobileScale * userZoom}px`,
+                    transition: gestureRef.current.isDragging || gestureRef.current.isPinching ? 'none' : 'transform 0.15s ease-out, height 0.15s ease-out',
                   }}
                 >
-                  {/* Terminal Header */}
-                  {settings.showWindowControls && (
-                    <div className="h-9 px-4 flex items-center justify-between border-b" style={{ backgroundColor: activeTheme.headerBackground, borderColor: activeTheme.backgroundColor }}>
-                      <div className="flex gap-2">
-                        {activeTheme.buttonStyle === 'ubuntu' ? (
-                          <>
-                            <div className="h-3.5 w-3.5 rounded-full bg-[#f1543f] flex items-center justify-center text-[8px] font-bold text-slate-900 cursor-pointer">×</div>
-                            <div className="h-3.5 w-3.5 rounded-full bg-[#3d3d3d] flex items-center justify-center text-[8px] font-bold text-slate-400 cursor-pointer">-</div>
-                            <div className="h-3.5 w-3.5 rounded-full bg-[#3d3d3d] flex items-center justify-center text-[8px] font-bold text-slate-400 cursor-pointer">▢</div>
-                          </>
-                        ) : activeTheme.buttonStyle === 'macos' ? (
-                          <>
-                            <div className="h-3 w-3 rounded-full bg-[#ff5f56]" />
-                            <div className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
-                            <div className="h-3 w-3 rounded-full bg-[#27c93f]" />
-                          </>
-                        ) : (
-                          <>
-                            <div className="h-2 w-2 rounded-full bg-slate-700" />
-                            <div className="h-2 w-2 rounded-full bg-slate-700" />
-                            <div className="h-2 w-2 rounded-full bg-slate-700" />
-                          </>
-                        )}
-                      </div>
-                      <span className="text-xs font-semibold select-none" style={{ color: activeTheme.headerTextColor }}>
-                        {settings.username}@{settings.hostname}: {settings.currentPath}
-                      </span>
-                      <div className="w-10" />
-                    </div>
-                  )}
-
-                  {/* Terminal Body */}
-                  <div className="text-left font-mono select-text" style={{ padding: `${settings.padding}px`, lineHeight: '1.5', backgroundColor: activeTheme.backgroundColor }}>
-                    {interactions.map((item) => (
-                      <div key={item.id}>
-                        <div className="flex flex-wrap items-center">
-                          <span style={{ color: activeTheme.promptUserHostColor }}>{settings.username}@{settings.hostname}</span>
-                          <span style={{ color: activeTheme.promptSeparatorColor }}>:</span>
-                          <span style={{ color: activeTheme.promptPathColor }}>{settings.currentPath}</span>
-                          <span style={{ color: activeTheme.promptSymbolColor }} className="mr-2">$</span>
-                          <span>{item.command}</span>
+                  <div 
+                    ref={terminalRef}
+                    id="terminal-render-target"
+                    className="rounded-xl shadow-2xl transition-all border overflow-hidden shrink-0"
+                    style={{
+                      width: `${settings.customWidth}px`,
+                      minHeight: settings.isAutoHeight ? 'auto' : `${settings.customHeight}px`,
+                      backgroundColor: activeTheme.backgroundColor,
+                      borderColor: activeTheme.headerBackground,
+                      color: activeTheme.textColor,
+                      fontFamily: `"${settings.fontFamily}", monospace`,
+                      fontSize: `${settings.fontSize}px`,
+                    }}
+                  >
+                    {/* Terminal Header */}
+                    {settings.showWindowControls && (
+                      <div className="h-9 px-4 flex items-center justify-between border-b" style={{ backgroundColor: activeTheme.headerBackground, borderColor: activeTheme.backgroundColor }}>
+                        <div className="flex gap-2">
+                          {activeTheme.buttonStyle === 'ubuntu' ? (
+                            <>
+                              <div className="h-3.5 w-3.5 rounded-full bg-[#f1543f] flex items-center justify-center text-[8px] font-bold text-slate-900 cursor-pointer">×</div>
+                              <div className="h-3.5 w-3.5 rounded-full bg-[#3d3d3d] flex items-center justify-center text-[8px] font-bold text-slate-400 cursor-pointer">-</div>
+                              <div className="h-3.5 w-3.5 rounded-full bg-[#3d3d3d] flex items-center justify-center text-[8px] font-bold text-slate-400 cursor-pointer">▢</div>
+                            </>
+                          ) : activeTheme.buttonStyle === 'macos' ? (
+                            <>
+                              <div className="h-3 w-3 rounded-full bg-[#ff5f56]" />
+                              <div className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
+                              <div className="h-3 w-3 rounded-full bg-[#27c93f]" />
+                            </>
+                          ) : (
+                            <>
+                              <div className="h-2 w-2 rounded-full bg-slate-700" />
+                              <div className="h-2 w-2 rounded-full bg-slate-700" />
+                              <div className="h-2 w-2 rounded-full bg-slate-700" />
+                            </>
+                          )}
                         </div>
-                        {item.output ? <div className="whitespace-pre pl-1 opacity-95">{item.output}</div> : null}
+                        <span className="text-xs font-semibold select-none" style={{ color: activeTheme.headerTextColor }}>
+                          {settings.username}@{settings.hostname}: {settings.currentPath}
+                        </span>
+                        <div className="w-10" />
                       </div>
-                    ))}
-                    <div className="flex items-center">
-                      <span style={{ color: activeTheme.promptUserHostColor }}>{settings.username}@{settings.hostname}</span>
-                      <span style={{ color: activeTheme.promptSeparatorColor }}>:</span>
-                      <span style={{ color: activeTheme.promptPathColor }}>{settings.currentPath}</span>
-                      <span style={{ color: activeTheme.promptSymbolColor }} className="mr-2">$</span>
-                      <span className={`inline-block w-2 h-4 ${settings.isBlinkingCursor ? 'animate-pulse' : ''}`} style={{ 
-                        backgroundColor: activeTheme.cursorColor,
-                        height: settings.cursorStyle === 'block' ? '1.1em' : '1px',
-                        width: settings.cursorStyle === 'beam' ? '2px' : '8px',
-                        marginTop: settings.cursorStyle === 'underline' ? '0.8em' : '0px',
-                      }} />
+                    )}
+
+                    {/* Terminal Body */}
+                    <div className="text-left font-mono select-text" style={{ padding: `${settings.padding}px`, lineHeight: '1.5', backgroundColor: activeTheme.backgroundColor }}>
+                      {interactions.map((item) => (
+                        <div key={item.id}>
+                          <div className="flex flex-wrap items-center">
+                            <span style={{ color: activeTheme.promptUserHostColor }}>{settings.username}@{settings.hostname}</span>
+                            <span style={{ color: activeTheme.promptSeparatorColor }}>:</span>
+                            <span style={{ color: activeTheme.promptPathColor }}>{settings.currentPath}</span>
+                            <span style={{ color: activeTheme.promptSymbolColor }} className="mr-2">$</span>
+                            <span>{item.command}</span>
+                          </div>
+                          {item.output ? <div className="whitespace-pre pl-1 opacity-95">{item.output}</div> : null}
+                        </div>
+                      ))}
+                      <div className="flex items-center">
+                        <span style={{ color: activeTheme.promptUserHostColor }}>{settings.username}@{settings.hostname}</span>
+                        <span style={{ color: activeTheme.promptSeparatorColor }}>:</span>
+                        <span style={{ color: activeTheme.promptPathColor }}>{settings.currentPath}</span>
+                        <span style={{ color: activeTheme.promptSymbolColor }} className="mr-2">$</span>
+                        <span className={`inline-block w-2 h-4 ${settings.isBlinkingCursor ? 'animate-pulse' : ''}`} style={{ 
+                          backgroundColor: activeTheme.cursorColor,
+                          height: settings.cursorStyle === 'block' ? '1.1em' : '1px',
+                          width: settings.cursorStyle === 'beam' ? '2px' : '8px',
+                          marginTop: settings.cursorStyle === 'underline' ? '0.8em' : '0px',
+                        }} />
+                      </div>
                     </div>
                   </div>
                 </div>
