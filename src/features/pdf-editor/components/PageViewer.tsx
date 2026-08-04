@@ -2,7 +2,17 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useStore } from '../../../store/globalStore';
 import { CanvasOverlay } from './CanvasOverlay';
-import { FileText, ZoomIn, ZoomOut, Loader2, ImagePlus, Upload, X } from 'lucide-react';
+import { PAGE_PRESETS, type PagePreset } from '../../../types';
+import { 
+  ZoomIn, 
+  ZoomOut, 
+  Loader2, 
+  ImagePlus, 
+  Upload, 
+  X, 
+  Plus, 
+  Trash2 
+} from 'lucide-react';
 
 // Set up pdf.js worker URL
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
@@ -85,8 +95,37 @@ const PageRenderer: React.FC<PageRendererProps> = ({ pageNumber, pdfDocument }) 
   );
 };
 
+const BlankPageRenderer: React.FC<{ pageNumber: number; pageSize: { width: number; height: number } }> = ({ pageNumber, pageSize }) => {
+  const zoomScale = useStore((state) => state.pdfDoc.zoomScale);
+  const scaledWidth = (pageSize?.width || 595) * zoomScale;
+  const scaledHeight = (pageSize?.height || 842) * zoomScale;
+
+  return (
+    <div 
+      className="relative shadow-2xl border border-slate-700/60 bg-white overflow-hidden rounded-b-lg transition-all"
+      style={{ width: scaledWidth, height: scaledHeight }}
+    >
+      <CanvasOverlay
+        pageNumber={pageNumber}
+        width={scaledWidth}
+        height={scaledHeight}
+      />
+    </div>
+  );
+};
+
 export const PageViewer: React.FC = () => {
-  const { pdfDoc, setPdfFile, setZoomScale, savedSnapshots, addElement } = useStore();
+  const { 
+    pdfDoc, 
+    setPdfFile, 
+    setZoomScale, 
+    savedSnapshots, 
+    addElement, 
+    addBlankPage, 
+    deletePage, 
+    updatePagePreset 
+  } = useStore();
+
   const [pdfDocument, setPdfDocument] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [pickerPage, setPickerPage] = useState<number | null>(null);
@@ -131,9 +170,10 @@ export const PageViewer: React.FC = () => {
 
       setPdfDocument(pdf);
       setPdfFile(file, pageSizes);
+      window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: `Loaded ${file.name} (${numPages} pages)`, type: 'success' } }));
     } catch (error) {
       console.error('Error loading PDF file:', error);
-      window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Failed to parse PDF. File may be corrupted.', type: 'error' } }));
+      window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Failed to parse PDF file.', type: 'error' } }));
     } finally {
       setIsLoading(false);
     }
@@ -169,7 +209,6 @@ export const PageViewer: React.FC = () => {
     window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: 'Snapshot placed on page!', type: 'success' } }));
   };
 
-  // ─── Image Upload Handler ───
   const handleImageUpload = useCallback((pageNum: number) => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -183,7 +222,6 @@ export const PageViewer: React.FC = () => {
         const dataUrl = ev.target?.result as string;
         if (!dataUrl) return;
 
-        // Get natural dimensions
         const img = new window.Image();
         img.onload = () => {
           const aspect = img.naturalWidth / img.naturalHeight;
@@ -229,37 +267,16 @@ export const PageViewer: React.FC = () => {
     );
   }
 
-  if (!pdfDoc.file || !pdfDocument) {
-    return (
-      <div className="flex flex-col items-center max-w-lg p-8 lg:p-12 glass-panel rounded-2xl border border-slate-800 text-center mx-4">
-        <div className="h-16 w-16 rounded-2xl bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center mb-6">
-          <FileText className="h-8 w-8 text-indigo-400" />
-        </div>
-        <h2 className="text-xl font-bold text-slate-100 tracking-tight">Interactive Lab PDF Workspace</h2>
-        <p className="text-sm text-slate-400 mt-2 leading-relaxed">
-          Upload a laboratory report PDF to activate canvas page rendering.
-        </p>
-        <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm py-3 px-6 rounded-xl shadow-lg shadow-indigo-600/10 transition-all mt-6 inline-block tap-bounce touch-btn">
-          Upload Lab PDF
-          <input 
-            type="file" 
-            accept=".pdf" 
-            className="hidden" 
-            onChange={handleFileChange}
-          />
-        </label>
-      </div>
-    );
-  }
+  const isBlankCanvas = !pdfDoc.file;
 
   return (
     <div className="flex flex-col h-full w-full">
       {/* Viewer controls */}
-      <div className="h-12 border-b border-slate-800/80 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center gap-3 lg:gap-4 px-3 lg:px-6 select-none shrink-0 z-20">
+      <div className="h-12 border-b border-slate-800/80 bg-slate-900/40 backdrop-blur-xs flex items-center justify-between px-3 lg:px-6 select-none shrink-0 z-20 gap-2">
         <div className="flex gap-1 items-center">
           <button 
             onClick={() => handleZoom(-0.1)}
-            className="p-2 hover:text-indigo-400 rounded-lg hover:bg-slate-800 transition-colors touch-btn-sm"
+            className="p-2 hover:text-indigo-400 rounded-lg hover:bg-slate-800 transition-colors touch-btn-sm text-slate-300"
             title="Zoom Out"
           >
             <ZoomOut className="h-4 w-4" />
@@ -269,91 +286,166 @@ export const PageViewer: React.FC = () => {
           </span>
           <button 
             onClick={() => handleZoom(0.1)}
-            className="p-2 hover:text-indigo-400 rounded-lg hover:bg-slate-800 transition-colors touch-btn-sm"
+            className="p-2 hover:text-indigo-400 rounded-lg hover:bg-slate-800 transition-colors touch-btn-sm text-slate-300"
             title="Zoom In"
           >
             <ZoomIn className="h-4 w-4" />
           </button>
         </div>
-        <span className="text-xs text-slate-500 font-medium hidden sm:inline">|</span>
-        <span className="text-xs text-slate-400 hidden sm:inline">
-          <strong className="text-slate-300">{pdfDoc.numPages}</strong> pages • <strong className="text-slate-300">{savedSnapshots.length}</strong> snapshots
-        </span>
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-400 font-medium hidden sm:inline">
+            <strong className="text-slate-200">{pdfDoc.numPages}</strong> {pdfDoc.numPages === 1 ? 'Page' : 'Pages'}
+            {isBlankCanvas ? ' (A4 Canvas)' : ' (PDF File)'}
+          </span>
+
+          {isBlankCanvas && (
+            <button
+              onClick={() => addBlankPage('a4_portrait')}
+              className="text-[11px] bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-1.5 px-3 rounded-lg transition-all flex items-center gap-1 shadow-md shadow-indigo-600/10 tap-bounce"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add Page
+            </button>
+          )}
+
+          <label className="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-[11px] py-1.5 px-3 rounded-lg border border-slate-700 transition-all flex items-center gap-1 tap-bounce">
+            <Upload className="h-3.5 w-3.5 text-indigo-400" />
+            <span className="hidden sm:inline">{pdfDoc.file ? 'Replace PDF' : 'Import PDF'}</span>
+            <input type="file" accept=".pdf" className="hidden" onChange={handleFileChange} />
+          </label>
+        </div>
       </div>
 
       {/* Pages Container */}
-      <div className="flex-1 overflow-y-auto overflow-x-auto px-2 lg:px-4 bg-slate-950/20">
-        {Array.from({ length: pdfDoc.numPages }, (_, i) => i + 1).map((pageNum) => (
-          <div key={pageNum} className="relative mx-auto my-4 lg:my-8 max-w-fit flex flex-col items-center">
-            {/* Page Header Bar */}
-            <div className="flex items-center justify-between bg-slate-900 border border-slate-700/60 border-b-0 rounded-t-lg px-3 lg:px-4 py-2 select-none w-full gap-2">
-              <span className="text-xs font-semibold text-slate-400 shrink-0">
-                Page <strong className="text-slate-200">{pageNum}</strong> / {pdfDoc.numPages}
-              </span>
-              <div className="flex gap-1.5">
-                {/* Upload Image button */}
-                <button
-                  onClick={() => handleImageUpload(pageNum)}
-                  className="text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold uppercase tracking-wider py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5 shadow-md shadow-emerald-600/10 active:scale-[0.97] tap-bounce"
-                  title="Upload your own image"
-                >
-                  <Upload className="h-3 w-3" />
-                  <span className="hidden sm:inline">Upload Image</span>
-                  <span className="sm:hidden">Image</span>
-                </button>
-                {/* Place Snapshot button */}
-                <button
-                  onClick={() => setPickerPage(pickerPage === pageNum ? null : pageNum)}
-                  className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white font-bold uppercase tracking-wider py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5 shadow-md shadow-indigo-600/10 active:scale-[0.97] tap-bounce"
-                >
-                  <ImagePlus className="h-3 w-3" />
-                  <span className="hidden sm:inline">Place Snapshot</span>
-                  <span className="sm:hidden">Snap</span>
-                </button>
-              </div>
-            </div>
+      <div className="flex-1 overflow-y-auto overflow-x-auto px-2 lg:px-4 bg-slate-950/20 pb-24">
+        {Array.from({ length: pdfDoc.numPages }, (_, i) => i + 1).map((pageNum) => {
+          const pageSize = pdfDoc.pageSizes[pageNum - 1] || { width: 595, height: 842, preset: 'a4_portrait' };
+          const currentPreset = pageSize.preset || 'a4_portrait';
 
-            {/* Snapshot Picker Dropdown */}
-            {pickerPage === pageNum && (
-              <div className="w-full bg-slate-900 border-x border-slate-700/60 px-3 lg:px-4 py-3 z-30 relative">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Choose a Snapshot</span>
-                  <button onClick={() => setPickerPage(null)} className="p-1 hover:text-red-400 text-slate-400 transition-colors touch-btn-sm">
-                    <X className="h-4 w-4" />
-                  </button>
+          return (
+            <div key={pageNum} className="relative mx-auto my-4 lg:my-8 max-w-fit flex flex-col items-center">
+              {/* Page Header Bar */}
+              <div className="flex items-center justify-between bg-slate-900 border border-slate-700/60 border-b-0 rounded-t-lg px-3 lg:px-4 py-2 select-none w-full gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-400 shrink-0">
+                    Page <strong className="text-slate-200">{pageNum}</strong> / {pdfDoc.numPages}
+                  </span>
+
+                  {/* Preset selector for blank canvas pages */}
+                  {isBlankCanvas && (
+                    <select
+                      value={currentPreset}
+                      onChange={(e) => updatePagePreset(pageNum, e.target.value as PagePreset)}
+                      className="bg-slate-950 border border-slate-800 text-[10px] text-indigo-300 font-medium rounded px-2 py-0.5 cursor-pointer outline-none focus:border-indigo-500"
+                    >
+                      {Object.entries(PAGE_PRESETS).map(([key, info]) => (
+                        <option key={key} value={key} className="bg-slate-950 text-slate-200">
+                          {info.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
-                {savedSnapshots.length === 0 ? (
-                  <p className="text-xs text-slate-500 italic py-2">
-                    No snapshots saved yet. Go to Terminal Generator mode and click <strong className="text-slate-400">"Save Snapshot"</strong> first.
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                    {savedSnapshots.map((snap) => (
-                      <button
-                        key={snap.id}
-                        onClick={() => handlePlaceSnapshot(snap.id, pageNum)}
-                        className="group bg-slate-950 border border-slate-800 hover:border-indigo-500/50 rounded-lg p-2 transition-all hover:shadow-lg hover:shadow-indigo-600/5 text-left tap-bounce"
-                      >
-                        <img 
-                          src={snap.dataUrl} 
-                          alt={snap.name}
-                          className="w-full h-16 object-contain rounded bg-slate-950 mb-1.5" 
-                        />
-                        <p className="text-[10px] text-slate-300 font-medium truncate group-hover:text-indigo-300 transition-colors">{snap.name}</p>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
 
-            {/* Render Page */}
-            <PageRenderer
-              pageNumber={pageNum}
-              pdfDocument={pdfDocument}
-            />
+                <div className="flex items-center gap-1.5">
+                  {/* Upload Image button */}
+                  <button
+                    onClick={() => handleImageUpload(pageNum)}
+                    className="text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold uppercase tracking-wider py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5 shadow-md shadow-emerald-600/10 active:scale-[0.97] tap-bounce"
+                    title="Upload image"
+                  >
+                    <Upload className="h-3 w-3" />
+                    <span className="hidden sm:inline">Upload Image</span>
+                    <span className="sm:hidden">Image</span>
+                  </button>
+
+                  {/* Place Snapshot button */}
+                  <button
+                    onClick={() => setPickerPage(pickerPage === pageNum ? null : pageNum)}
+                    className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white font-bold uppercase tracking-wider py-1.5 px-3 rounded-md transition-all flex items-center gap-1.5 shadow-md shadow-indigo-600/10 active:scale-[0.97] tap-bounce"
+                  >
+                    <ImagePlus className="h-3 w-3" />
+                    <span className="hidden sm:inline">Place Snapshot</span>
+                    <span className="sm:hidden">Snap</span>
+                  </button>
+
+                  {/* Delete page button if blank canvas and > 1 page */}
+                  {isBlankCanvas && pdfDoc.numPages > 1 && (
+                    <button
+                      onClick={() => {
+                        deletePage(pageNum);
+                        window.dispatchEvent(new CustomEvent('show-toast', { detail: { message: `Deleted Page ${pageNum}`, type: 'info' } }));
+                      }}
+                      className="p-1.5 text-slate-400 hover:text-red-400 transition-colors rounded hover:bg-slate-800"
+                      title="Delete Page"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Snapshot Picker Dropdown */}
+              {pickerPage === pageNum && (
+                <div className="w-full bg-slate-900 border-x border-slate-700/60 px-3 lg:px-4 py-3 z-30 relative">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Choose a Snapshot</span>
+                    <button onClick={() => setPickerPage(null)} className="p-1 hover:text-red-400 text-slate-400 transition-colors touch-btn-sm">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  {savedSnapshots.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic py-2">
+                      No snapshots saved yet. Go to Terminal Generator mode and click <strong className="text-slate-400">"Save Snapshot"</strong> first.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                      {savedSnapshots.map((snap) => (
+                        <button
+                          key={snap.id}
+                          onClick={() => handlePlaceSnapshot(snap.id, pageNum)}
+                          className="group bg-slate-950 border border-slate-800 hover:border-indigo-500/50 rounded-lg p-2 transition-all hover:shadow-lg hover:shadow-indigo-600/5 text-left tap-bounce"
+                        >
+                          <img 
+                            src={snap.dataUrl} 
+                            alt={snap.name}
+                            className="w-full h-16 object-contain rounded bg-slate-950 mb-1.5" 
+                          />
+                          <p className="text-[10px] text-slate-300 font-medium truncate group-hover:text-indigo-300 transition-colors">{snap.name}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Render Page Canvas */}
+              {pdfDoc.file && pdfDocument ? (
+                <PageRenderer
+                  pageNumber={pageNum}
+                  pdfDocument={pdfDocument}
+                />
+              ) : (
+                <BlankPageRenderer
+                  pageNumber={pageNum}
+                  pageSize={pageSize}
+                />
+              )}
+            </div>
+          );
+        })}
+
+        {/* Add page bottom action card for blank canvas mode */}
+        {isBlankCanvas && (
+          <div className="mx-auto max-w-sm my-6 text-center">
+            <button
+              onClick={() => addBlankPage('a4_portrait')}
+              className="w-full py-3 px-4 bg-slate-900/60 hover:bg-slate-900 border border-dashed border-indigo-500/40 hover:border-indigo-500 rounded-xl text-xs font-bold text-indigo-300 flex items-center justify-center gap-2 transition-all shadow-lg tap-bounce"
+            >
+              <Plus className="h-4 w-4" /> Add Another Blank Page (A4)
+            </button>
           </div>
-        ))}
+        )}
       </div>
     </div>
   );

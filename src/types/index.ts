@@ -60,10 +60,25 @@ export interface CanvasElement {
   pageNumber: number;
 }
 
+export type PagePreset = 'a4_portrait' | 'a4_landscape' | 'letter' | 'square';
+
+export interface CanvasPageSize {
+  width: number;
+  height: number;
+  preset?: PagePreset;
+}
+
+export const PAGE_PRESETS: Record<PagePreset, { name: string; width: number; height: number }> = {
+  a4_portrait: { name: 'A4 Portrait (595 × 842)', width: 595, height: 842 },
+  a4_landscape: { name: 'A4 Landscape (842 × 595)', width: 842, height: 595 },
+  letter: { name: 'Letter (612 × 792)', width: 612, height: 792 },
+  square: { name: 'Square (600 × 600)', width: 600, height: 600 },
+};
+
 export interface PdfDocumentState {
   file: File | null;
   numPages: number;
   currentPage: number;
   zoomScale: number;
-  pageSizes: Array<{ width: number; height: number }>;
+  pageSizes: CanvasPageSize[];
 }

@@ -336,6 +336,20 @@ export default function App() {
 
   const selectedElement = elements.find((el) => el.id === selectedElementId);
 
+  // ─── PAGE REFRESH PROTECTION ──────────────────
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (elements.length > 0 || savedSnapshots.length > 0 || interactions.length > 0) {
+        e.preventDefault();
+        e.returnValue = 'All unsaved changes will be lost if you refresh. Are you sure?';
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [elements, savedSnapshots, interactions]);
+
   // ─── HANDLERS ──────────────────────────────────
 
   const handleAddDefaultInteraction = () => {
@@ -427,12 +441,6 @@ export default function App() {
 
   // Quick insert: save snapshot then switch to PDF mode
   const handleInsertToPdf = async () => {
-    if (!pdfDoc.file) {
-      showToast('Upload a PDF file first!', 'info');
-      setActiveMode('pdf');
-      setFabOpen(false);
-      return;
-    }
     const node = document.getElementById('terminal-render-target');
     if (!node) return;
     try {
@@ -449,15 +457,27 @@ export default function App() {
     setFabOpen(false);
   };
 
-  // Compile and export the edited PDF
+  // Compile and export the edited PDF (supports both uploaded PDF and multi-page blank canvas mode!)
   const handleExportPdf = async () => {
-    if (!pdfDoc.file) return;
     setIsPdfLoading(true);
     try {
       const { PDFDocument, degrees } = await import('pdf-lib');
-      const arrayBuffer = await pdfDoc.file.arrayBuffer();
-      const pdfLibDoc = await PDFDocument.load(arrayBuffer);
-      const pages = pdfLibDoc.getPages();
+      let pdfLibDoc;
+      let pages: any[] = [];
+
+      if (pdfDoc.file) {
+        // Uploaded PDF mode
+        const arrayBuffer = await pdfDoc.file.arrayBuffer();
+        pdfLibDoc = await PDFDocument.load(arrayBuffer);
+        pages = pdfLibDoc.getPages();
+      } else {
+        // Blank Canvas mode — create a new multi-page PDF document from scratch
+        pdfLibDoc = await PDFDocument.create();
+        for (const pageSize of pdfDoc.pageSizes) {
+          const newPage = pdfLibDoc.addPage([pageSize.width || 595, pageSize.height || 842]);
+          pages.push(newPage);
+        }
+      }
 
       for (let i = 0; i < pages.length; i++) {
         const pageNum = i + 1;
@@ -489,7 +509,6 @@ export default function App() {
           const base64Data = dataUrlToEmbed.split(',')[1];
           const imageBytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
           
-          // Support both PNG and JPEG
           let embeddedImage;
           if (dataUrlToEmbed.startsWith('data:image/jpeg') || dataUrlToEmbed.startsWith('data:image/jpg')) {
             embeddedImage = await pdfLibDoc.embedJpg(imageBytes);
@@ -514,7 +533,8 @@ export default function App() {
       const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `edited_${pdfDoc.file.name}`;
+      const filename = pdfDoc.file ? `edited_${pdfDoc.file.name}` : `lab_report_${Date.now()}.pdf`;
+      link.download = filename;
       link.click();
       showToast('PDF exported successfully!', 'success');
     } catch (error) {
@@ -928,7 +948,7 @@ export default function App() {
                 </button>
               </>
             )}
-            {activeMode === 'pdf' && pdfDoc.file && (
+            {activeMode === 'pdf' && (
               <button onClick={handleExportPdf} disabled={isPdfLoading} className="flex items-center gap-1.5 py-1.5 px-3.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shadow-lg shadow-indigo-600/10 transition-all disabled:opacity-50">
                 <FileText className="h-3.5 w-3.5" /> {isPdfLoading ? 'Compiling...' : 'Export PDF'}
               </button>
@@ -961,7 +981,7 @@ export default function App() {
                 </button>
               </>
             )}
-            {activeMode === 'pdf' && pdfDoc.file && (
+            {activeMode === 'pdf' && (
               <button onClick={handleExportPdf} disabled={isPdfLoading} className="py-2 px-3.5 rounded-lg bg-indigo-600 text-xs font-semibold text-white tap-bounce touch-btn-sm">
                 {isPdfLoading ? '...' : 'Export'}
               </button>
@@ -1237,17 +1257,15 @@ export default function App() {
                   </motion.button>
                 </>
               ) : (
-                pdfDoc.file && (
-                  <motion.button
-                    onClick={handleExportPdf}
-                    className="fab-menu-item"
-                    initial={{ opacity: 0, y: 10, scale: 0.9 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ delay: 0.05 }}
-                  >
-                    <Download className="h-4 w-4 text-indigo-400" /> Export PDF
-                  </motion.button>
-                )
+                <motion.button
+                  onClick={handleExportPdf}
+                  className="fab-menu-item"
+                  initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ delay: 0.05 }}
+                >
+                  <Download className="h-4 w-4 text-indigo-400" /> Export PDF
+                </motion.button>
               )}
             </motion.div>
           )}

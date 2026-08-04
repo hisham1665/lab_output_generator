@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import type { TerminalSettings, TerminalInteraction, CanvasElement, PdfDocumentState, SavedSnapshot } from '../types';
+import type { TerminalSettings, TerminalInteraction, CanvasElement, PdfDocumentState, SavedSnapshot, PagePreset, CanvasPageSize } from '../types';
+import { PAGE_PRESETS } from '../types';
 
 export type ActiveMode = 'terminal' | 'pdf';
 
@@ -42,9 +43,12 @@ export interface AppState {
 
   // PDF Document Editor State
   pdfDoc: PdfDocumentState;
-  setPdfFile: (file: File | null, pageSizes?: Array<{ width: number; height: number }>) => void;
+  setPdfFile: (file: File | null, pageSizes?: CanvasPageSize[]) => void;
   setCurrentPage: (page: number) => void;
   setZoomScale: (scale: number) => void;
+  addBlankPage: (preset?: PagePreset) => void;
+  deletePage: (pageNumber: number) => void;
+  updatePagePreset: (pageNumber: number, preset: PagePreset) => void;
 
   // Canvas Overlay Elements State
   elements: CanvasElement[];
@@ -224,18 +228,18 @@ export const useStore = create<AppState>()(
       // PDF State
       pdfDoc: {
         file: null,
-        numPages: 0,
+        numPages: 1,
         currentPage: 1,
         zoomScale: 1.0,
-        pageSizes: [],
+        pageSizes: [{ width: 595, height: 842, preset: 'a4_portrait' }],
       },
       setPdfFile: (file, pageSizes = []) => set((state) => ({
         pdfDoc: {
           file,
-          numPages: pageSizes.length,
+          numPages: file === null ? 1 : pageSizes.length,
           currentPage: 1,
           zoomScale: 1.0,
-          pageSizes,
+          pageSizes: file === null ? [{ width: 595, height: 842, preset: 'a4_portrait' }] : pageSizes,
         },
         elements: file === null ? [] : state.elements,
         selectedElementId: null,
@@ -249,6 +253,57 @@ export const useStore = create<AppState>()(
       setZoomScale: (scale) => set((state) => ({
         pdfDoc: { ...state.pdfDoc, zoomScale: Math.max(0.5, Math.min(scale, 3.0)) }
       })),
+      addBlankPage: (preset = 'a4_portrait') => set((state) => {
+        const dimensions = PAGE_PRESETS[preset] || PAGE_PRESETS.a4_portrait;
+        const newPageSizes = [
+          ...state.pdfDoc.pageSizes,
+          { width: dimensions.width, height: dimensions.height, preset },
+        ];
+        return {
+          pdfDoc: {
+            ...state.pdfDoc,
+            numPages: newPageSizes.length,
+            pageSizes: newPageSizes,
+          },
+        };
+      }),
+      deletePage: (pageNumber) => set((state) => {
+        if (state.pdfDoc.pageSizes.length <= 1) return {}; // Keep at least 1 page
+
+        const pageIndex = pageNumber - 1;
+        const newPageSizes = state.pdfDoc.pageSizes.filter((_, idx) => idx !== pageIndex);
+
+        // Remove elements on deleted page and shift page numbers of subsequent elements
+        const remainingElements = state.elements
+          .filter((el) => el.pageNumber !== pageNumber)
+          .map((el) => el.pageNumber > pageNumber ? { ...el, pageNumber: el.pageNumber - 1 } : el);
+
+        return {
+          pdfDoc: {
+            ...state.pdfDoc,
+            numPages: newPageSizes.length,
+            currentPage: Math.min(state.pdfDoc.currentPage, newPageSizes.length),
+            pageSizes: newPageSizes,
+          },
+          elements: remainingElements,
+          selectedElementId: null,
+        };
+      }),
+      updatePagePreset: (pageNumber, preset) => set((state) => {
+        const pageIndex = pageNumber - 1;
+        const dimensions = PAGE_PRESETS[preset] || PAGE_PRESETS.a4_portrait;
+        const newPageSizes = state.pdfDoc.pageSizes.map((size, idx) =>
+          idx === pageIndex
+            ? { width: dimensions.width, height: dimensions.height, preset }
+            : size
+        );
+        return {
+          pdfDoc: {
+            ...state.pdfDoc,
+            pageSizes: newPageSizes,
+          },
+        };
+      }),
 
       // Canvas Overlay Elements
       elements: [],
