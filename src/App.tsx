@@ -32,6 +32,10 @@ import {
   Palette,
   List,
   Type,
+  Search,
+  Menu as MenuIcon,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
@@ -288,13 +292,14 @@ export default function App() {
 
   // Measure container width and compute scale
   useEffect(() => {
+    if (activeMode !== 'terminal') return;
     const container = terminalContainerRef.current;
     if (!container) return;
 
     const updateScale = () => {
       const containerWidth = container.clientWidth;
       const terminalWidth = settings.customWidth;
-      if (containerWidth < terminalWidth) {
+      if (containerWidth < terminalWidth && containerWidth > 0) {
         setMobileScale(containerWidth / terminalWidth);
       } else {
         setMobileScale(1);
@@ -305,22 +310,26 @@ export default function App() {
     const observer = new ResizeObserver(updateScale);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [settings.customWidth]);
+  }, [settings.customWidth, activeMode]);
 
   // Measure actual terminal height for proper scaled layout
   useEffect(() => {
+    if (activeMode !== 'terminal') return;
     const terminal = terminalRef.current;
     if (!terminal) return;
 
     const updateHeight = () => {
-      setTerminalHeight(terminal.offsetHeight);
+      const h = terminal.scrollHeight || terminal.offsetHeight;
+      if (h > 0) {
+        setTerminalHeight(h);
+      }
     };
 
     updateHeight();
     const observer = new ResizeObserver(updateHeight);
     observer.observe(terminal);
     return () => observer.disconnect();
-  }, [interactions, settings]);
+  }, [interactions, settings, activeMode]);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   
   const activeTheme = THEME_PRESETS[settings.themeId] || THEME_PRESETS.ubuntu;
@@ -980,22 +989,44 @@ export default function App() {
                 <span><strong className="text-emerald-400">{savedSnapshots.length}</strong> saved</span>
               </div>
 
-              {/* Mobile scale indicator */}
+              {/* Mobile scale indicator & interactive zoom controls */}
               {mobileScale < 1 && (
-                <div className="lg:hidden mb-3 text-[10px] text-slate-400 font-medium flex flex-col items-center gap-1 select-none">
-                  <div className="flex items-center gap-2">
-                    <span className="bg-slate-800/80 px-2 py-0.5 rounded-full text-indigo-400">Scale: {Math.round(mobileScale * userZoom * 100)}%</span>
-                    <span>•</span>
-                    <span>{settings.customWidth}px viewport</span>
+                <div className="lg:hidden mb-3 text-[10px] text-slate-400 font-medium flex flex-col items-center gap-1.5 select-none w-full px-2">
+                  <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 rounded-full px-3 py-1.5 shadow-lg">
+                    <button 
+                      onClick={() => setUserZoom(Math.max(1, userZoom - 0.25))} 
+                      className="p-1 hover:text-indigo-400 text-slate-300 touch-btn-sm"
+                      title="Zoom Out"
+                    >
+                      <ZoomOut className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="bg-slate-800/80 px-2.5 py-0.5 rounded-full text-indigo-300 font-semibold">
+                      {Math.round(mobileScale * userZoom * 100)}%
+                    </span>
+                    <button 
+                      onClick={() => setUserZoom(Math.min(4, userZoom + 0.25))} 
+                      className="p-1 hover:text-indigo-400 text-slate-300 touch-btn-sm"
+                      title="Zoom In"
+                    >
+                      <ZoomIn className="h-3.5 w-3.5" />
+                    </button>
+                    {(userZoom > 1 || panX !== 0 || panY !== 0) && (
+                      <button 
+                        onClick={() => { setUserZoom(1); setPanX(0); setPanY(0); }} 
+                        className="text-[9px] uppercase font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 hover:bg-amber-500/20 ml-1"
+                      >
+                        Reset
+                      </button>
+                    )}
                   </div>
-                  <span className="text-[9px] text-slate-500">Pinch with 2 fingers to zoom • Drag to move • Double tap to reset</span>
+                  <span className="text-[9px] text-slate-500">Pinch or tap +/- to zoom • Drag to pan • Double tap reset</span>
                 </div>
               )}
 
               {/* Terminal scaling wrapper — measures available width and scales the 800px terminal to fit */}
               <div 
                 ref={terminalContainerRef} 
-                className="w-full flex justify-center overflow-hidden touch-none"
+                className={`w-full flex justify-center touch-none ${userZoom > 1 ? 'overflow-visible z-20' : 'overflow-hidden'}`}
                 onTouchStart={handleTouchStart}
                 onTouchMove={handleTouchMove}
                 onTouchEnd={handleTouchEnd}
@@ -1009,7 +1040,7 @@ export default function App() {
                     transform: `translate3d(${panX}px, ${panY}px, 0) scale(${mobileScale * userZoom})`,
                     transformOrigin: 'top center',
                     width: `${settings.customWidth}px`,
-                    height: `${terminalHeight * mobileScale * userZoom}px`,
+                    height: (terminalHeight > 0 && mobileScale < 1) ? `${terminalHeight * mobileScale * userZoom}px` : undefined,
                     transition: gestureRef.current.isDragging || gestureRef.current.isPinching ? 'none' : 'transform 0.15s ease-out, height 0.15s ease-out',
                   }}
                 >
@@ -1027,34 +1058,55 @@ export default function App() {
                       fontSize: `${settings.fontSize}px`,
                     }}
                   >
-                    {/* Terminal Header */}
+                    {/* Terminal Header — Authentic GNOME Terminal Layout */}
                     {settings.showWindowControls && (
-                      <div className="h-9 px-4 flex items-center justify-between border-b" style={{ backgroundColor: activeTheme.headerBackground, borderColor: activeTheme.backgroundColor }}>
-                        <div className="flex gap-2">
-                          {activeTheme.buttonStyle === 'ubuntu' ? (
-                            <>
-                              <div className="h-3.5 w-3.5 rounded-full bg-[#f1543f] flex items-center justify-center text-[8px] font-bold text-slate-900 cursor-pointer">×</div>
-                              <div className="h-3.5 w-3.5 rounded-full bg-[#3d3d3d] flex items-center justify-center text-[8px] font-bold text-slate-400 cursor-pointer">-</div>
-                              <div className="h-3.5 w-3.5 rounded-full bg-[#3d3d3d] flex items-center justify-center text-[8px] font-bold text-slate-400 cursor-pointer">▢</div>
-                            </>
-                          ) : activeTheme.buttonStyle === 'macos' ? (
-                            <>
-                              <div className="h-3 w-3 rounded-full bg-[#ff5f56]" />
-                              <div className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
-                              <div className="h-3 w-3 rounded-full bg-[#27c93f]" />
-                            </>
-                          ) : (
-                            <>
-                              <div className="h-2 w-2 rounded-full bg-slate-700" />
-                              <div className="h-2 w-2 rounded-full bg-slate-700" />
-                              <div className="h-2 w-2 rounded-full bg-slate-700" />
-                            </>
-                          )}
-                        </div>
-                        <span className="text-xs font-semibold select-none" style={{ color: activeTheme.headerTextColor }}>
+                      <div 
+                        className="h-10 px-3 flex items-center justify-between border-b select-none" 
+                        style={{ backgroundColor: activeTheme.headerBackground, borderColor: activeTheme.backgroundColor }}
+                      >
+                        {/* Left Controls: New Tab icon [+] */}
+                        {activeTheme.buttonStyle === 'macos' ? (
+                          <div className="flex items-center gap-1.5">
+                            <div className="h-3 w-3 rounded-full bg-[#ff5f56]" />
+                            <div className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
+                            <div className="h-3 w-3 rounded-full bg-[#27c93f]" />
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <div 
+                              className="h-6 w-6 rounded bg-white/10 hover:bg-white/20 border border-white/10 flex items-center justify-center text-xs font-semibold text-slate-200 cursor-pointer"
+                              title="New Tab"
+                            >
+                              +
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Title text */}
+                        <span 
+                          className="text-xs font-bold truncate max-w-[260px] sm:max-w-[420px] px-2 text-center" 
+                          style={{ color: activeTheme.headerTextColor }}
+                        >
                           {settings.username}@{settings.hostname}: {settings.currentPath}
                         </span>
-                        <div className="w-10" />
+
+                        {/* Right Controls: Search, Menu, Minimize, Maximize, Close */}
+                        {activeTheme.buttonStyle === 'macos' ? (
+                          <div className="w-12" />
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <div className="h-6 w-6 rounded hover:bg-white/10 flex items-center justify-center text-slate-300 cursor-pointer transition-colors" title="Search">
+                              <Search className="h-3 w-3" />
+                            </div>
+                            <div className="h-6 w-6 rounded hover:bg-white/10 flex items-center justify-center text-slate-300 cursor-pointer transition-colors" title="Menu">
+                              <MenuIcon className="h-3 w-3" />
+                            </div>
+                            <div className="h-3 w-[1px] bg-slate-600/60 mx-1" />
+                            <div className="h-6 w-6 rounded-full hover:bg-white/15 flex items-center justify-center text-slate-200 text-xs font-light cursor-pointer" title="Minimize">−</div>
+                            <div className="h-6 w-6 rounded-full hover:bg-white/15 flex items-center justify-center text-slate-200 text-[10px] cursor-pointer" title="Maximize">▢</div>
+                            <div className="h-6 w-6 rounded-full bg-white/10 hover:bg-red-600 flex items-center justify-center text-slate-100 text-xs cursor-pointer transition-colors" title="Close">✕</div>
+                          </div>
+                        )}
                       </div>
                     )}
 

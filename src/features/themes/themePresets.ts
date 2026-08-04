@@ -16,16 +16,30 @@ export interface TerminalTheme {
 export const THEME_PRESETS: Record<string, TerminalTheme> = {
   ubuntu: {
     id: 'ubuntu',
-    name: 'Ubuntu Default',
+    name: 'Ubuntu Default (Dark)',
     backgroundColor: '#300A24',
-    textColor: '#DFDBCE',
-    cursorColor: '#DFDBCE',
-    promptUserHostColor: '#8AE234', // Green username@host
-    promptSeparatorColor: '#DFDBCE',
-    promptPathColor: '#729FCF',     // Blue path
-    promptSymbolColor: '#DFDBCE',
-    headerBackground: '#2d0922',
-    headerTextColor: '#DFDBCE',
+    textColor: '#ffffff',
+    cursorColor: '#ffffff',
+    promptUserHostColor: '#4e9a06', // Ubuntu green
+    promptSeparatorColor: '#ffffff',
+    promptPathColor: '#729fcf',     // Ubuntu blue
+    promptSymbolColor: '#ffffff',
+    headerBackground: '#26061d',
+    headerTextColor: '#ffffff',
+    buttonStyle: 'ubuntu',
+  },
+  ubuntuLight: {
+    id: 'ubuntuLight',
+    name: 'Ubuntu Yaru Light',
+    backgroundColor: '#f7f8f9',
+    textColor: '#1a1a1a',
+    cursorColor: '#1a1a1a',
+    promptUserHostColor: '#4e9a06', // Ubuntu green
+    promptSeparatorColor: '#1a1a1a',
+    promptPathColor: '#3465a4',     // Ubuntu blue
+    promptSymbolColor: '#1a1a1a',
+    headerBackground: '#3c3c3c',
+    headerTextColor: '#ffffff',
     buttonStyle: 'ubuntu',
   },
   dracula: {
