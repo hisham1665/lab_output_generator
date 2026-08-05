@@ -1,32 +1,65 @@
-# React + TypeScript + Vite
+# Lab Terminal Studio
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Lab Terminal Studio is a powerful web-based tool designed to generate custom terminal mockup snapshots and embed them directly into PDF documents or a blank canvas. It provides an intuitive interface for customizing terminal aesthetics, commands, and outputs, alongside a robust PDF editor for arranging and exporting your final compositions.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Terminal Mockup Generator**:
+  - Customize terminal appearance (themes, fonts, font size, padding).
+  - Add, edit, duplicate, and reorder terminal interactions (commands and outputs).
+  - Configurable prompt details (username, hostname, current directory).
+  - Export terminal snapshots as PNG or copy directly to clipboard.
+- **PDF Editor**:
+  - Upload existing PDF documents or start with a blank multi-page canvas.
+  - Insert generated terminal snapshots onto PDF pages.
+  - Interactive canvas: drag, resize, rotate, crop, lock, and manage layers (bring to front/send to back) of your inserted snapshots.
+  - Fine-tune opacity for placed elements.
+- **Export & Compilation**:
+  - Compile the final document with embedded high-quality terminal snapshots.
+  - Export the edited document as a new PDF file.
 
-## React Compiler
+## Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Framework**: React 19 + TypeScript + Vite
+- **Styling**: Tailwind CSS, Framer Motion
+- **Icons**: Lucide React
+- **State Management**: Zustand
+- **Canvas & PDF Handling**: 
+  - `konva` & `react-konva` for interactive 2D canvas manipulations.
+  - `pdfjs-dist` for rendering and viewing PDF pages.
+  - `pdf-lib` for modifying and generating the final PDF document.
+  - `html-to-image` for capturing high-quality DOM-to-image snapshots.
 
-## Expanding the Oxlint configuration
+## Getting Started
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+### Prerequisites
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+- Node.js (v18+ recommended)
+- npm or yarn or pnpm
+
+### Installation
+
+1. Clone the repository and navigate to the project directory:
+   ```bash
+   cd lab_output
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Start the development server:
+   ```bash
+   npm run dev
+   ```
+
+4. Open your browser and visit the local URL provided by Vite (usually `http://localhost:5173`).
+
+### Building for Production
+
+To create a production-ready build, run:
+```bash
+npm run build
 ```
-
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+The compiled assets will be available in the `dist` folder.
