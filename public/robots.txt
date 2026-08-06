@@ -6,7 +6,7 @@ Disallow: /breach
 Disallow: /signal
 
 # Sitemaps
-Sitemap: https://lab-terminal-studio.vercel.app/sitemap.xml
+Sitemap: https://lab-output-generator.vercel.app/sitemap.xml
 
 # Crawl-delay
 Crawl-delay: 1

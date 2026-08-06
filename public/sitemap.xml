@@ -6,7 +6,7 @@
   
   <!-- Main Application -->
   <url>
-    <loc>https://lab-terminal-studio.vercel.app/</loc>
+    <loc>https://lab-output-generator.vercel.app/</loc>
     <lastmod>2026-08-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
@@ -14,7 +14,7 @@
 
   <!-- Developer / About Page -->
   <url>
-    <loc>https://lab-terminal-studio.vercel.app/developer</loc>
+    <loc>https://lab-output-generator.vercel.app/developer</loc>
     <lastmod>2026-08-06</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
