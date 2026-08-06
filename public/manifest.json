@@ -1,0 +1,19 @@
+{
+  "name": "Lab Terminal Studio",
+  "short_name": "TermStudio",
+  "description": "Generate realistic Ubuntu terminal screenshots and embed them into lab report PDFs. Free online terminal mockup generator.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "orientation": "any",
+  "categories": ["developer tools", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
