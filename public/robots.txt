@@ -5,20 +5,25 @@ Disallow: /void
 Disallow: /breach
 Disallow: /signal
 
-# Sitemaps
+# Sitemap location
 Sitemap: https://lab-output-generator.vercel.app/sitemap.xml
 
-# Crawl-delay
-Crawl-delay: 1
-
-# Google
+# Google Search Bot
 User-agent: Googlebot
 Allow: /
+Allow: /*.png$
+Allow: /*.svg$
+Allow: /*.js$
+Allow: /*.css$
 Disallow: /void
 Disallow: /breach
 Disallow: /signal
 
-# Bing
+# Google Image Bot
+User-agent: Googlebot-Image
+Allow: /
+
+# Bing Search Bot
 User-agent: Bingbot
 Allow: /
 Disallow: /void

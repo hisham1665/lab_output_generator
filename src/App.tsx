@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useStore } from './store/globalStore';
 import { THEME_PRESETS } from './features/themes';
 import { PageViewer } from './features/pdf-editor/components/PageViewer';
+import { SEOContentSection } from './components/SEOContentSection';
+import { updateSEOMetadata } from './utils/seo';
 import { toPng, toBlob } from 'html-to-image';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -176,6 +178,10 @@ export default function App() {
     bringToFront,
     sendToBack,
   } = useStore();
+
+  useEffect(() => {
+    updateSEOMetadata({});
+  }, []);
 
   const { toasts, showToast } = useToast();
 
@@ -1312,6 +1318,9 @@ export default function App() {
         >
           <Plus className="h-6 w-6" />
         </button>
+
+        {/* ═══════ RICH SEO LANDING CONTENT ═══════ */}
+        <SEOContentSection />
       </div>
 
       {/* ═══════ MOBILE BOTTOM SHEETS ═══════ */}

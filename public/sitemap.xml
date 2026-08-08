@@ -1,21 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
         http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
   
-  <!-- Main Application -->
+  <!-- Main Application / Terminal Screenshot & Lab Output Generator -->
   <url>
     <loc>https://lab-output-generator.vercel.app/</loc>
-    <lastmod>2026-08-06</lastmod>
-    <changefreq>weekly</changefreq>
+    <lastmod>2026-08-08</lastmod>
+    <changefreq>daily</changefreq>
     <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://lab-output-generator.vercel.app/og-image.png</image:loc>
+      <image:title>Lab Output Generator Terminal Screenshot Preview</image:title>
+      <image:caption>Realistic Ubuntu terminal mockup screenshot generator for lab reports</image:caption>
+    </image:image>
   </url>
 
-  <!-- Developer / About Page -->
+  <!-- Developer / Portfolio Link -->
   <url>
     <loc>https://lab-output-generator.vercel.app/developer</loc>
-    <lastmod>2026-08-06</lastmod>
+    <lastmod>2026-08-08</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
