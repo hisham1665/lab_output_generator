@@ -3,6 +3,7 @@ import { useStore } from './store/globalStore';
 import { THEME_PRESETS } from './features/themes';
 import { PageViewer } from './features/pdf-editor/components/PageViewer';
 import { SEOContentSection } from './components/SEOContentSection';
+import { SEOHead } from './components/SEOHead';
 import { updateSEOMetadata } from './utils/seo';
 import { toPng, toBlob } from 'html-to-image';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -760,6 +761,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen h-[100dvh] w-screen overflow-hidden bg-slate-950 text-slate-100 font-sans">
+      <SEOHead />
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} />
 

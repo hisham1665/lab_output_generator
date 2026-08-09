@@ -8,20 +8,20 @@
   <!-- Main Application / Terminal Screenshot & Lab Output Generator -->
   <url>
     <loc>https://lab-output-generator.vercel.app/</loc>
-    <lastmod>2026-08-08</lastmod>
+    <lastmod>2026-08-09</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
     <image:image>
       <image:loc>https://lab-output-generator.vercel.app/og-image.png</image:loc>
       <image:title>Lab Output Generator Terminal Screenshot Preview</image:title>
-      <image:caption>Realistic Ubuntu terminal mockup screenshot generator for lab reports</image:caption>
+      <image:caption>Realistic Ubuntu terminal mockup screenshot generator for lab reports and technical manuals</image:caption>
     </image:image>
   </url>
 
   <!-- Developer / Portfolio Link -->
   <url>
     <loc>https://lab-output-generator.vercel.app/developer</loc>
-    <lastmod>2026-08-08</lastmod>
+    <lastmod>2026-08-09</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>

@@ -9,7 +9,10 @@ import {
   Download, 
   Palette, 
   Zap, 
-  Cpu
+  Cpu,
+  Layers,
+  Code2,
+  BookOpen
 } from 'lucide-react';
 
 interface FAQItem {
@@ -20,27 +23,27 @@ interface FAQItem {
 const FAQS: FAQItem[] = [
   {
     question: "What is Lab Output Generator and how does it help with lab reports?",
-    answer: "Lab Output Generator is a free, web-based tool designed for students, computer science researchers, and developers to generate realistic Ubuntu and Linux terminal output screenshots. You can type commands, preview realistic terminal styling, and instantly export PNG images or embed them directly into lab report PDFs."
+    answer: "Lab Output Generator is a free, web-based developer tool designed for computer science students, researchers, and engineers to generate realistic Ubuntu and Linux terminal output screenshots. You can type or paste command lines, customize realistic terminal styling, and instantly export 2x retina PNG images or embed screenshots into PDF lab reports."
   },
   {
     question: "How do I create a fake Ubuntu terminal screenshot for my university lab manual?",
-    answer: "Simply type or paste your command line output into the terminal editor, select your preferred theme (such as Ubuntu, Dracula, or One Dark), adjust fonts and window controls, and click 'Copy Image' or 'Download PNG'. You can also drag the generated screenshot onto a multi-page PDF canvas to compile a complete lab report."
+    answer: "Type or paste your terminal output into the editor, select your preferred theme (Ubuntu Yaru, Dracula, One Dark, Nord), adjust fonts, prompt headers (user@ubuntu:~$), and click 'Copy Image' or 'Download PNG'. You can also drag the generated screenshot directly onto a PDF canvas to complete your lab report."
   },
   {
     question: "Is Lab Output Generator free to use and safe for student data?",
-    answer: "Yes, Lab Output Generator is 100% free and open source. All processing happens entirely within your web browser using client-side JavaScript—your terminal commands, uploaded PDFs, and code outputs are never uploaded to any remote server."
+    answer: "Yes, Lab Output Generator is 100% free and open source. All code processing and PDF editing run entirely inside your web browser using client-side JavaScript. Your commands, uploaded PDFs, and code outputs are never stored or transmitted to external servers."
   },
   {
     question: "Can I embed terminal screenshots into a multi-page PDF lab report?",
-    answer: "Yes! Lab Output Generator features a full PDF Editor mode. You can upload an existing PDF lab manual or start with blank A4/Letter pages, drag and drop terminal mockups onto pages, crop, rotate, resize, and compile a final downloadable PDF."
+    answer: "Yes! Lab Output Generator features a full PDF Editor mode. You can upload an existing PDF lab template or start with blank A4/Letter pages, drag and drop terminal mockups onto pages, crop, rotate, resize, and export a finished assignment document."
   },
   {
-    question: "Which terminal themes and fonts are supported?",
-    answer: "We support popular color schemes including Ubuntu Yaru, Dracula, One Dark Pro, Nord, Synthwave, Hacker Matrix Green, and Clean Light. Fonts include Ubuntu Mono, JetBrains Mono, Fira Code, Source Code Pro, and Courier Prime."
+    question: "Which Linux distributions, terminal themes, and fonts are supported?",
+    answer: "We support themes for Ubuntu Yaru (Dark/Light), Dracula, One Dark Pro, Nord, Cyberpunk Synthwave, Kali Linux, and Hacker Matrix Green. Developer monospace fonts include Ubuntu Mono, JetBrains Mono, Fira Code, Source Code Pro, and Courier Prime."
   },
   {
     question: "How can I ensure high resolution terminal screenshots for printing?",
-    answer: "All generated screenshots use crisp 2x retina device pixel scaling. When exported as PNG or placed on PDF lab pages, terminal text remains pin-sharp even when printed on paper."
+    answer: "All generated screenshots automatically render with crisp 2x retina device pixel scaling. When printed on paper or submitted digitally to professors, text remains razor-sharp without pixelation."
   }
 ];
 
@@ -52,12 +55,12 @@ export const SEOContentSection: React.FC = () => {
   };
 
   return (
-    <section className="w-full bg-slate-950/80 border-t border-slate-800/80 pt-16 pb-20 px-4 sm:px-6 lg:px-8 text-slate-300 transition-all">
+    <article className="w-full bg-slate-950/80 border-t border-slate-800/80 pt-16 pb-20 px-4 sm:px-6 lg:px-8 text-slate-300 transition-all">
       <div className="max-w-6xl mx-auto space-y-16">
         
         {/* ═══ HEADER & H1 ═══ */}
-        <div className="text-center space-y-4 max-w-3xl mx-auto">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-semibold uppercase tracking-wider">
+        <header className="text-center space-y-4 max-w-3xl mx-auto">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-semibold uppercase tracking-wider">
             <Sparkles className="h-3.5 w-3.5" />
             #1 Online Terminal Screenshot & Lab Report Generator
           </div>
@@ -69,10 +72,10 @@ export const SEOContentSection: React.FC = () => {
           <p className="text-base sm:text-lg text-slate-400 leading-relaxed font-normal">
             Generate high-resolution Linux command line outputs, customize terminal themes & fonts, and compile ready-to-submit university lab report PDFs in seconds.
           </p>
-        </div>
+        </header>
 
         {/* ═══ CORE FEATURES GRID ═══ */}
-        <div className="space-y-6">
+        <section className="space-y-6">
           <div className="text-center space-y-2">
             <h2 className="text-2xl font-bold text-white tracking-tight flex items-center justify-center gap-2">
               <Zap className="h-5 w-5 text-indigo-400" />
@@ -144,10 +147,53 @@ export const SEOContentSection: React.FC = () => {
               </p>
             </div>
           </div>
-        </div>
+        </section>
+
+        {/* ═══ USE CASES FOR CS ACADEMICS ═══ */}
+        <section className="bg-slate-900/30 border border-slate-800/80 rounded-3xl p-8 space-y-6">
+          <div className="text-center space-y-2 max-w-2xl mx-auto">
+            <h2 className="text-2xl font-bold text-white tracking-tight flex items-center justify-center gap-2">
+              <BookOpen className="h-5 w-5 text-indigo-400" />
+              Computer Science & IT Coursework Use Cases
+            </h2>
+            <p className="text-xs text-slate-400">
+              Ideal for formatting lab manuals across various university subjects.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800/60 space-y-1.5">
+              <div className="text-indigo-400 font-semibold text-sm flex items-center gap-2">
+                <Code2 className="h-4 w-4" /> C / C++ Programming
+              </div>
+              <p className="text-xs text-slate-400">Format GCC compilation errors, gdb debugging sessions, and pointer outputs cleanly.</p>
+            </div>
+
+            <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800/60 space-y-1.5">
+              <div className="text-emerald-400 font-semibold text-sm flex items-center gap-2">
+                <Layers className="h-4 w-4" /> OS & Linux Systems
+              </div>
+              <p className="text-xs text-slate-400">Mock up shell scripts, process management (<code className="text-emerald-300">ps aux</code>), system calls, and bash prompts.</p>
+            </div>
+
+            <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800/60 space-y-1.5">
+              <div className="text-cyan-400 font-semibold text-sm flex items-center gap-2">
+                <Terminal className="h-4 w-4" /> Computer Networks
+              </div>
+              <p className="text-xs text-slate-400">Generate clean ping responses, traceroute routes, Wireshark CLI outputs, and netstat tables.</p>
+            </div>
+
+            <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800/60 space-y-1.5">
+              <div className="text-purple-400 font-semibold text-sm flex items-center gap-2">
+                <Zap className="h-4 w-4" /> Database Systems
+              </div>
+              <p className="text-xs text-slate-400">Format MySQL, PostgreSQL, and MongoDB query result tables in terminal mockups.</p>
+            </div>
+          </div>
+        </section>
 
         {/* ═══ HOW TO GUIDE (HOW-TO SCHEMA MATCHING) ═══ */}
-        <div className="bg-slate-900/40 border border-slate-800 rounded-3xl p-8 space-y-8">
+        <section className="bg-slate-900/40 border border-slate-800 rounded-3xl p-8 space-y-8">
           <div className="text-center space-y-2 max-w-2xl mx-auto">
             <h2 className="text-2xl font-bold text-white tracking-tight">
               How to Create Ubuntu Terminal Screenshots for Lab Reports (3 Easy Steps)
@@ -188,10 +234,10 @@ export const SEOContentSection: React.FC = () => {
               </p>
             </div>
           </div>
-        </div>
+        </section>
 
         {/* ═══ FAQ ACCORDION SECTION ═══ */}
-        <div className="space-y-6 max-w-4xl mx-auto">
+        <section className="space-y-6 max-w-4xl mx-auto">
           <div className="text-center space-y-2">
             <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center justify-center gap-2">
               <HelpCircle className="h-6 w-6 text-indigo-400" />
@@ -225,23 +271,24 @@ export const SEOContentSection: React.FC = () => {
               </div>
             ))}
           </div>
-        </div>
+        </section>
 
         {/* ═══ FOOTER & KEYWORD LINKS ═══ */}
-        <div className="pt-8 border-t border-slate-900 text-center space-y-4">
+        <footer className="pt-8 border-t border-slate-900 text-center space-y-4">
           <div className="flex flex-wrap justify-center items-center gap-3 text-xs text-slate-500">
             <span>Terminal Screenshot Generator</span> •
             <span>Ubuntu Terminal Mockup</span> •
             <span>Linux Command Line Screenshot</span> •
             <span>Lab Report PDF Compiler</span> •
-            <span>Fake Terminal Output Creator</span>
+            <span>Fake Terminal Output Creator</span> •
+            <span>Bash Output Generator</span>
           </div>
           <p className="text-xs text-slate-600">
             © {new Date().getFullYear()} Lab Output Generator. Designed for CS Students, Developers & Educators Worldwide.
           </p>
-        </div>
+        </footer>
 
       </div>
-    </section>
+    </article>
   );
 };
