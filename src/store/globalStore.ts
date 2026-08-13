@@ -65,7 +65,7 @@ export interface AppState {
 
 const initialSettings: TerminalSettings = {
   username: 'student',
-  hostname: 'shr-cslab3-34',
+  hostname: 'shr-clab3-34',
   currentPath: '~/Desktop',
   themeId: 'ubuntu',
   fontFamily: 'Ubuntu Mono',

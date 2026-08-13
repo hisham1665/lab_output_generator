@@ -124,6 +124,155 @@
   @apply transition-transform duration-100 active:scale-[0.96];
 }
 
+/* ═══════ Inline Terminal Editing ═══════ */
+.terminal-inline-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  margin: 0;
+  width: auto;
+  min-width: 2ch;
+  line-height: inherit;
+  caret-color: currentColor;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.terminal-inline-input::placeholder {
+  color: inherit;
+  opacity: 0.25;
+}
+
+.terminal-inline-input:focus {
+  box-shadow: 0 1px 0 0 rgba(99, 102, 241, 0.4);
+}
+
+/* Output textarea — only rendered when output exists */
+.terminal-inline-textarea {
+  display: block;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  line-height: inherit;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  caret-color: currentColor;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.terminal-inline-textarea:focus {
+  box-shadow: 0 1px 0 0 rgba(99, 102, 241, 0.4);
+}
+
+/* Row container — no extra padding, tight layout */
+.terminal-row {
+  position: relative;
+}
+
+/* Delete button — hidden by default */
+.terminal-row-delete {
+  position: absolute;
+  right: -8px;
+  top: 0px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: rgba(239, 68, 68, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.7);
+  transition: all 0.15s ease;
+  z-index: 5;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.terminal-row:hover .terminal-row-delete,
+.terminal-row:focus-within .terminal-row-delete {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.terminal-row-delete:active {
+  background: rgba(239, 68, 68, 0.4);
+}
+
+/* On touch devices, show delete on focus-within only */
+@media (pointer: coarse) {
+  .terminal-row-delete {
+    width: 22px;
+    height: 22px;
+    right: -10px;
+    top: -2px;
+  }
+  .terminal-row:focus-within .terminal-row-delete {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Add command button — subtle, inside terminal */
+.terminal-add-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  margin-top: 6px;
+  border-radius: 4px;
+  border: 1px dashed rgba(100, 116, 139, 0.2);
+  color: rgba(148, 163, 184, 0.35);
+  font-size: 0.7em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  background: transparent;
+  width: auto;
+  display: inline-flex;
+}
+
+.terminal-add-row:hover,
+.terminal-add-row:active {
+  color: rgba(129, 140, 248, 0.7);
+  border-color: rgba(129, 140, 248, 0.3);
+  background: rgba(129, 140, 248, 0.05);
+}
+
+/* "+ output" button — HIDDEN by default, only visible when row is focused */
+.terminal-add-output {
+  display: none;
+  background: none;
+  border: none;
+  outline: none;
+  color: inherit;
+  opacity: 0.3;
+  font: inherit;
+  font-size: 0.7em;
+  padding: 1px 0 0 4px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.terminal-row:focus-within .terminal-add-output {
+  display: inline-block;
+}
+
+.terminal-add-output:active {
+  opacity: 0.6;
+}
+
 /* ═══════ Crop Overlay ═══════ */
 .crop-handle {
   @apply absolute bg-white border-2 border-indigo-500 rounded-sm z-50;

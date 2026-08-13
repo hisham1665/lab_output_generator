@@ -33,7 +33,6 @@ import {
   Settings2,
   Clipboard,
   Palette,
-  List,
   Type,
   Search,
   Menu as MenuIcon,
@@ -190,6 +189,11 @@ export default function App() {
   const [bottomSheet, setBottomSheet] = useState<string | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
 
+  // Inline editing state — prevents pinch/pan gestures while typing
+  const [isEditing, setIsEditing] = useState(false);
+  // Track which rows have their output textarea open (for rows with no output yet)
+  const [outputVisibleIds, setOutputVisibleIds] = useState<Set<string>>(new Set());
+
   // Terminal preview scaling for mobile
   const terminalContainerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -223,6 +227,9 @@ export default function App() {
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    // Skip gesture handling when editing terminal content
+    if (isEditing) return;
+    
     const touches = e.touches;
     
     // Double tap to reset
@@ -259,6 +266,8 @@ export default function App() {
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    if (isEditing) return;
+    
     const touches = e.touches;
     
     if (gestureRef.current.isDragging && touches.length === 1) {
@@ -363,6 +372,36 @@ export default function App() {
     addInteraction('ls -la', 'total 8\ndrwxr-xr-x  2 root root 4096 Aug  3 18:00 .\ndrwxr-xr-x 10 root root 4096 Aug  3 18:00 ..');
   };
 
+  // Add empty interaction for inline editing
+  const handleAddEmptyInteraction = () => {
+    addInteraction('', '');
+  };
+
+  // Helper to hide editing UI before screenshot capture and restore after
+  const withCleanTerminal = async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
+    const target = document.getElementById('terminal-render-target');
+    if (!target) return undefined;
+    // Hide editing UI elements
+    const deleteButtons = target.querySelectorAll('.terminal-row-delete, .terminal-add-row');
+    const inputs = target.querySelectorAll<HTMLElement>('.terminal-inline-input, .terminal-inline-textarea');
+    // Blur any focused input
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    setIsEditing(false);
+    // Hide delete/add buttons
+    deleteButtons.forEach(el => (el as HTMLElement).style.display = 'none');
+    // Make inputs look like plain text (remove focus styles)
+    inputs.forEach(el => el.style.boxShadow = 'none');
+    // Wait a frame for styles to apply
+    await new Promise(r => requestAnimationFrame(r));
+    try {
+      return await fn();
+    } finally {
+      // Restore UI
+      deleteButtons.forEach(el => (el as HTMLElement).style.display = '');
+      inputs.forEach(el => el.style.boxShadow = '');
+    }
+  };
+
   // Pending PDF File safeguard state when canvas has active edits
   const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
 
@@ -412,76 +451,84 @@ export default function App() {
 
   // Copy terminal image to clipboard
   const handleCopyImage = async () => {
-    const node = document.getElementById('terminal-render-target');
-    if (!node) return;
-    try {
-      const blob = await toBlob(node, { pixelRatio: 2.5, backgroundColor: 'transparent' });
-      if (blob) {
-        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
-        showToast('Terminal snapshot copied to clipboard!', 'success');
+    await withCleanTerminal(async () => {
+      const node = document.getElementById('terminal-render-target');
+      if (!node) return;
+      try {
+        const blob = await toBlob(node, { pixelRatio: 2.5, backgroundColor: 'transparent' });
+        if (blob) {
+          await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+          showToast('Terminal snapshot copied to clipboard!', 'success');
+        }
+      } catch (error) {
+        console.error('Error copying image:', error);
+        showToast('Failed to copy image. Check browser permissions.', 'error');
       }
-    } catch (error) {
-      console.error('Error copying image:', error);
-      showToast('Failed to copy image. Check browser permissions.', 'error');
-    }
+    });
     setFabOpen(false);
   };
 
   // Download terminal as PNG
   const handleDownloadPng = async () => {
-    const node = document.getElementById('terminal-render-target');
-    if (!node) return;
-    try {
-      const dataUrl = await toPng(node, { pixelRatio: 2.5, backgroundColor: 'transparent' });
-      const link = document.createElement('a');
-      link.download = `terminal_${settings.username}_${Date.now()}.png`;
-      link.href = dataUrl;
-      link.click();
-      showToast('PNG downloaded!', 'success');
-    } catch (error) {
-      console.error('Error downloading PNG:', error);
-      showToast('Failed to generate PNG image.', 'error');
-    }
+    await withCleanTerminal(async () => {
+      const node = document.getElementById('terminal-render-target');
+      if (!node) return;
+      try {
+        const dataUrl = await toPng(node, { pixelRatio: 2.5, backgroundColor: 'transparent' });
+        const link = document.createElement('a');
+        link.download = `terminal_${settings.username}_${Date.now()}.png`;
+        link.href = dataUrl;
+        link.click();
+        showToast('PNG downloaded!', 'success');
+      } catch (error) {
+        console.error('Error downloading PNG:', error);
+        showToast('Failed to generate PNG image.', 'error');
+      }
+    });
     setFabOpen(false);
   };
 
   // Save terminal snapshot to gallery
   const handleSaveSnapshot = async () => {
-    const node = document.getElementById('terminal-render-target');
-    if (!node) return;
-    try {
-      const rect = node.getBoundingClientRect();
-      const dataUrl = await toPng(node, { pixelRatio: 2.5, backgroundColor: 'transparent' });
-      const name = `Terminal ${savedSnapshots.length + 1}`;
-      addSnapshot({
-        name,
-        dataUrl,
-        width: rect.width,
-        height: rect.height,
-      });
-      showToast(`"${name}" saved! Switch to PDF Editor to place it.`, 'success');
-    } catch (error) {
-      console.error('Error saving snapshot:', error);
-      showToast('Failed to capture terminal snapshot.', 'error');
-    }
+    await withCleanTerminal(async () => {
+      const node = document.getElementById('terminal-render-target');
+      if (!node) return;
+      try {
+        const rect = node.getBoundingClientRect();
+        const dataUrl = await toPng(node, { pixelRatio: 2.5, backgroundColor: 'transparent' });
+        const name = `Terminal ${savedSnapshots.length + 1}`;
+        addSnapshot({
+          name,
+          dataUrl,
+          width: rect.width,
+          height: rect.height,
+        });
+        showToast(`"${name}" saved! Switch to PDF Editor to place it.`, 'success');
+      } catch (error) {
+        console.error('Error saving snapshot:', error);
+        showToast('Failed to capture terminal snapshot.', 'error');
+      }
+    });
     setFabOpen(false);
   };
 
   // Quick insert: save snapshot then switch to PDF mode
   const handleInsertToPdf = async () => {
-    const node = document.getElementById('terminal-render-target');
-    if (!node) return;
-    try {
-      const rect = node.getBoundingClientRect();
-      const dataUrl = await toPng(node, { pixelRatio: 2.5, backgroundColor: 'transparent' });
-      const name = `Terminal ${savedSnapshots.length + 1}`;
-      addSnapshot({ name, dataUrl, width: rect.width, height: rect.height });
-      setActiveMode('pdf');
-      showToast('Snapshot saved! Click "Place Snapshot" on any page.', 'success');
-    } catch (error) {
-      console.error('Error inserting to PDF:', error);
-      showToast('Failed to capture terminal image.', 'error');
-    }
+    await withCleanTerminal(async () => {
+      const node = document.getElementById('terminal-render-target');
+      if (!node) return;
+      try {
+        const rect = node.getBoundingClientRect();
+        const dataUrl = await toPng(node, { pixelRatio: 2.5, backgroundColor: 'transparent' });
+        const name = `Terminal ${savedSnapshots.length + 1}`;
+        addSnapshot({ name, dataUrl, width: rect.width, height: rect.height });
+        setActiveMode('pdf');
+        showToast('Snapshot saved! Click "Place Snapshot" on any page.', 'success');
+      } catch (error) {
+        console.error('Error inserting to PDF:', error);
+        showToast('Failed to capture terminal image.', 'error');
+      }
+    });
     setFabOpen(false);
   };
 
@@ -1026,173 +1073,245 @@ export default function App() {
         </header>
 
         {/* Workspace View */}
-        <div className="flex-1 flex items-center justify-center p-4 lg:p-8 overflow-auto pb-20 lg:pb-8">
-          {activeMode === 'terminal' ? (
-            <div className="flex flex-col items-center w-full">
-              {/* Info bar - desktop only */}
-              <div className="hidden lg:flex mb-4 text-xs text-slate-500 font-semibold items-center gap-3">
-                <span>Viewport: <strong className="text-slate-300">{settings.customWidth}px</strong></span>
-                <span className="h-1.5 w-1.5 bg-slate-800 rounded-full" />
-                <span>Font: <strong className="text-slate-300">{settings.fontFamily}</strong></span>
-                <span className="h-1.5 w-1.5 bg-slate-800 rounded-full" />
-                <span><strong className="text-emerald-400">{savedSnapshots.length}</strong> saved</span>
-              </div>
-
-              {/* Mobile scale indicator & interactive zoom controls */}
-              {mobileScale < 1 && (
-                <div className="lg:hidden mb-3 text-[10px] text-slate-400 font-medium flex flex-col items-center gap-1.5 select-none w-full px-2">
-                  <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 rounded-full px-3 py-1.5 shadow-lg">
-                    <button 
-                      onClick={() => setUserZoom(Math.max(1, userZoom - 0.25))} 
-                      className="p-1 hover:text-indigo-400 text-slate-300 touch-btn-sm"
-                      title="Zoom Out"
-                    >
-                      <ZoomOut className="h-3.5 w-3.5" />
-                    </button>
-                    <span className="bg-slate-800/80 px-2.5 py-0.5 rounded-full text-indigo-300 font-semibold">
-                      {Math.round(mobileScale * userZoom * 100)}%
-                    </span>
-                    <button 
-                      onClick={() => setUserZoom(Math.min(4, userZoom + 0.25))} 
-                      className="p-1 hover:text-indigo-400 text-slate-300 touch-btn-sm"
-                      title="Zoom In"
-                    >
-                      <ZoomIn className="h-3.5 w-3.5" />
-                    </button>
-                    {(userZoom > 1 || panX !== 0 || panY !== 0) && (
-                      <button 
-                        onClick={() => { setUserZoom(1); setPanX(0); setPanY(0); }} 
-                        className="text-[9px] uppercase font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 hover:bg-amber-500/20 ml-1"
-                      >
-                        Reset
-                      </button>
-                    )}
-                  </div>
-                  <span className="text-[9px] text-slate-500">Pinch or tap +/- to zoom • Drag to pan • Double tap reset</span>
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 lg:p-8 pb-24 lg:pb-12">
+          <div className="min-h-[calc(100vh-8rem)] flex flex-col items-center justify-center w-full">
+            {activeMode === 'terminal' ? (
+              <div className="flex flex-col items-center w-full">
+                {/* Info bar - desktop only */}
+                <div className="hidden lg:flex mb-4 text-xs text-slate-500 font-semibold items-center gap-3">
+                  <span>Viewport: <strong className="text-slate-300">{settings.customWidth}px</strong></span>
+                  <span className="h-1.5 w-1.5 bg-slate-800 rounded-full" />
+                  <span>Font: <strong className="text-slate-300">{settings.fontFamily}</strong></span>
+                  <span className="h-1.5 w-1.5 bg-slate-800 rounded-full" />
+                  <span><strong className="text-emerald-400">{savedSnapshots.length}</strong> saved</span>
                 </div>
-              )}
 
-              {/* Terminal scaling wrapper — measures available width and scales the 800px terminal to fit */}
-              <div 
-                ref={terminalContainerRef} 
-                className={`w-full flex justify-center touch-none ${userZoom > 1 ? 'overflow-visible z-20' : 'overflow-hidden'}`}
-                onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
-                style={{
-                  touchAction: 'none',
-                  cursor: userZoom > 1 ? 'grab' : 'default',
-                }}
-              >
-                <div
+                {/* Mobile scale indicator & interactive zoom controls */}
+                {mobileScale < 1 && (
+                  <div className="lg:hidden mb-3 text-[10px] text-slate-400 font-medium flex flex-col items-center gap-1.5 select-none w-full px-2">
+                    <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 rounded-full px-3 py-1.5 shadow-lg">
+                      <button 
+                        onClick={() => setUserZoom(Math.max(1, userZoom - 0.25))} 
+                        className="p-1 hover:text-indigo-400 text-slate-300 touch-btn-sm"
+                        title="Zoom Out"
+                      >
+                        <ZoomOut className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="bg-slate-800/80 px-2.5 py-0.5 rounded-full text-indigo-300 font-semibold">
+                        {Math.round(mobileScale * userZoom * 100)}%
+                      </span>
+                      <button 
+                        onClick={() => setUserZoom(Math.min(4, userZoom + 0.25))} 
+                        className="p-1 hover:text-indigo-400 text-slate-300 touch-btn-sm"
+                        title="Zoom In"
+                      >
+                        <ZoomIn className="h-3.5 w-3.5" />
+                      </button>
+                      {(userZoom > 1 || panX !== 0 || panY !== 0) && (
+                        <button 
+                          onClick={() => { setUserZoom(1); setPanX(0); setPanY(0); }} 
+                          className="text-[9px] uppercase font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 hover:bg-amber-500/20 ml-1"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                    <span className="text-[9px] text-slate-500">Pinch or tap +/- to zoom • Drag to pan • Double tap reset</span>
+                  </div>
+                )}
+
+                {/* Terminal scaling wrapper — measures available width and scales the 800px terminal to fit */}
+                <div 
+                  ref={terminalContainerRef} 
+                  className={`w-full flex justify-center touch-none ${userZoom > 1 ? 'overflow-visible z-20' : 'overflow-hidden'}`}
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
                   style={{
-                    transform: `translate3d(${panX}px, ${panY}px, 0) scale(${mobileScale * userZoom})`,
-                    transformOrigin: 'top center',
-                    width: `${settings.customWidth}px`,
-                    height: (terminalHeight > 0 && mobileScale < 1) ? `${terminalHeight * mobileScale * userZoom}px` : undefined,
-                    transition: gestureRef.current.isDragging || gestureRef.current.isPinching ? 'none' : 'transform 0.15s ease-out, height 0.15s ease-out',
+                    touchAction: 'none',
+                    cursor: userZoom > 1 ? 'grab' : 'default',
                   }}
                 >
-                  <div 
-                    ref={terminalRef}
-                    id="terminal-render-target"
-                    className="rounded-xl shadow-2xl transition-all border overflow-hidden shrink-0"
+                  <div
                     style={{
+                      transform: `translate3d(${panX}px, ${panY}px, 0) scale(${mobileScale * userZoom})`,
+                      transformOrigin: 'top center',
                       width: `${settings.customWidth}px`,
-                      minHeight: settings.isAutoHeight ? 'auto' : `${settings.customHeight}px`,
-                      backgroundColor: activeTheme.backgroundColor,
-                      borderColor: activeTheme.headerBackground,
-                      color: activeTheme.textColor,
-                      fontFamily: `"${settings.fontFamily}", monospace`,
-                      fontSize: `${settings.fontSize}px`,
+                      height: (terminalHeight > 0 && mobileScale < 1) ? `${terminalHeight * mobileScale * userZoom}px` : undefined,
+                      transition: gestureRef.current.isDragging || gestureRef.current.isPinching ? 'none' : 'transform 0.15s ease-out, height 0.15s ease-out',
                     }}
                   >
-                    {/* Terminal Header — Authentic GNOME Terminal Layout */}
-                    {settings.showWindowControls && (
-                      <div 
-                        className="h-10 px-3 flex items-center justify-between border-b select-none" 
-                        style={{ backgroundColor: activeTheme.headerBackground, borderColor: activeTheme.backgroundColor }}
-                      >
-                        {/* Left Controls: New Tab icon [+] */}
-                        {activeTheme.buttonStyle === 'macos' ? (
-                          <div className="flex items-center gap-1.5">
-                            <div className="h-3 w-3 rounded-full bg-[#ff5f56]" />
-                            <div className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
-                            <div className="h-3 w-3 rounded-full bg-[#27c93f]" />
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <div 
-                              className="h-6 w-6 rounded bg-white/10 hover:bg-white/20 border border-white/10 flex items-center justify-center text-xs font-semibold text-slate-200 cursor-pointer"
-                              title="New Tab"
-                            >
-                              +
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Title text */}
-                        <span 
-                          className="text-xs font-bold truncate max-w-[260px] sm:max-w-[420px] px-2 text-center" 
-                          style={{ color: activeTheme.headerTextColor }}
+                    <div 
+                      ref={terminalRef}
+                      id="terminal-render-target"
+                      className="rounded-xl shadow-2xl transition-all border overflow-hidden shrink-0"
+                      style={{
+                        width: `${settings.customWidth}px`,
+                        minHeight: settings.isAutoHeight ? 'auto' : `${settings.customHeight}px`,
+                        backgroundColor: activeTheme.backgroundColor,
+                        borderColor: activeTheme.headerBackground,
+                        color: activeTheme.textColor,
+                        fontFamily: `"${settings.fontFamily}", monospace`,
+                        fontSize: `${settings.fontSize}px`,
+                      }}
+                    >
+                      {/* Terminal Header — Authentic GNOME Terminal Layout */}
+                      {settings.showWindowControls && (
+                        <div 
+                          className="h-10 px-3 flex items-center justify-between border-b select-none" 
+                          style={{ backgroundColor: activeTheme.headerBackground, borderColor: activeTheme.backgroundColor }}
                         >
-                          {settings.username}@{settings.hostname}: {settings.currentPath}
-                        </span>
-
-                        {/* Right Controls: Search, Menu, Minimize, Maximize, Close */}
-                        {activeTheme.buttonStyle === 'macos' ? (
-                          <div className="w-12" />
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            <div className="h-6 w-6 rounded hover:bg-white/10 flex items-center justify-center text-slate-300 cursor-pointer transition-colors" title="Search">
-                              <Search className="h-3 w-3" />
+                          {/* Left Controls: New Tab icon [+] */}
+                          {activeTheme.buttonStyle === 'macos' ? (
+                            <div className="flex items-center gap-1.5">
+                              <div className="h-3 w-3 rounded-full bg-[#ff5f56]" />
+                              <div className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
+                              <div className="h-3 w-3 rounded-full bg-[#27c93f]" />
                             </div>
-                            <div className="h-6 w-6 rounded hover:bg-white/10 flex items-center justify-center text-slate-300 cursor-pointer transition-colors" title="Menu">
-                              <MenuIcon className="h-3 w-3" />
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <div 
+                                className="h-6 w-6 rounded bg-white/10 hover:bg-white/20 border border-white/10 flex items-center justify-center text-xs font-semibold text-slate-200 cursor-pointer"
+                                title="New Tab"
+                              >
+                                +
+                              </div>
                             </div>
-                            <div className="h-3 w-[1px] bg-slate-600/60 mx-1" />
-                            <div className="h-6 w-6 rounded-full hover:bg-white/15 flex items-center justify-center text-slate-200 text-xs font-light cursor-pointer" title="Minimize">−</div>
-                            <div className="h-6 w-6 rounded-full hover:bg-white/15 flex items-center justify-center text-slate-200 text-[10px] cursor-pointer" title="Maximize">▢</div>
-                            <div className="h-6 w-6 rounded-full bg-white/10 hover:bg-red-600 flex items-center justify-center text-slate-100 text-xs cursor-pointer transition-colors" title="Close">✕</div>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                          )}
 
-                    {/* Terminal Body */}
-                    <div className="text-left font-mono select-text" style={{ padding: `${settings.padding}px`, lineHeight: '1.5', backgroundColor: activeTheme.backgroundColor }}>
-                      {interactions.map((item) => (
-                        <div key={item.id}>
-                          <div className="flex flex-wrap items-center">
-                            <span style={{ color: activeTheme.promptUserHostColor }}>{settings.username}@{settings.hostname}</span>
-                            <span style={{ color: activeTheme.promptSeparatorColor }}>:</span>
-                            <span style={{ color: activeTheme.promptPathColor }}>{settings.currentPath}</span>
-                            <span style={{ color: activeTheme.promptSymbolColor }} className="mr-2">$</span>
-                            <span>{item.command}</span>
-                          </div>
-                          {item.output ? <div className="whitespace-pre pl-1 opacity-95">{item.output}</div> : null}
+                          {/* Title text */}
+                          <span 
+                            className="text-xs font-bold truncate max-w-[260px] sm:max-w-[420px] px-2 text-center" 
+                            style={{ color: activeTheme.headerTextColor }}
+                          >
+                            {settings.username}@{settings.hostname}: {settings.currentPath}
+                          </span>
+
+                          {/* Right Controls: Search, Menu, Minimize, Maximize, Close */}
+                          {activeTheme.buttonStyle === 'macos' ? (
+                            <div className="w-12" />
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <div className="h-6 w-6 rounded hover:bg-white/10 flex items-center justify-center text-slate-300 cursor-pointer transition-colors" title="Search">
+                                <Search className="h-3 w-3" />
+                              </div>
+                              <div className="h-6 w-6 rounded hover:bg-white/10 flex items-center justify-center text-slate-300 cursor-pointer transition-colors" title="Menu">
+                                <MenuIcon className="h-3 w-3" />
+                              </div>
+                              <div className="h-3 w-[1px] bg-slate-600/60 mx-1" />
+                              <div className="h-6 w-6 rounded-full hover:bg-white/15 flex items-center justify-center text-slate-200 text-xs font-light cursor-pointer" title="Minimize">−</div>
+                              <div className="h-6 w-6 rounded-full hover:bg-white/15 flex items-center justify-center text-slate-200 text-[10px] cursor-pointer" title="Maximize">▢</div>
+                              <div className="h-6 w-6 rounded-full bg-white/10 hover:bg-red-600 flex items-center justify-center text-slate-100 text-xs cursor-pointer transition-colors" title="Close">✕</div>
+                            </div>
+                          )}
                         </div>
-                      ))}
-                      <div className="flex items-center">
-                        <span style={{ color: activeTheme.promptUserHostColor }}>{settings.username}@{settings.hostname}</span>
-                        <span style={{ color: activeTheme.promptSeparatorColor }}>:</span>
-                        <span style={{ color: activeTheme.promptPathColor }}>{settings.currentPath}</span>
-                        <span style={{ color: activeTheme.promptSymbolColor }} className="mr-2">$</span>
-                        <span className={`inline-block w-2 h-4 ${settings.isBlinkingCursor ? 'animate-pulse' : ''}`} style={{ 
-                          backgroundColor: activeTheme.cursorColor,
-                          height: settings.cursorStyle === 'block' ? '1.1em' : '1px',
-                          width: settings.cursorStyle === 'beam' ? '2px' : '8px',
-                          marginTop: settings.cursorStyle === 'underline' ? '0.8em' : '0px',
-                        }} />
+                      )}
+
+                      {/* Terminal Body — Inline Editable */}
+                      <div className="text-left font-mono select-text" style={{ padding: `${settings.padding}px`, lineHeight: '1.25', backgroundColor: activeTheme.backgroundColor }}>
+                        {interactions.map((item) => (
+                          <div key={item.id} className="terminal-row">
+                            {/* Delete button */}
+                            {interactions.length > 1 && (
+                              <button
+                                className="terminal-row-delete"
+                                onClick={() => deleteInteraction(item.id)}
+                                title="Delete row"
+                                tabIndex={-1}
+                              >
+                                <X className="h-2.5 w-2.5" />
+                              </button>
+                            )}
+                            {/* Prompt + inline command input */}
+                            <div className="flex flex-wrap items-center">
+                              <span style={{ color: activeTheme.promptUserHostColor }}>{settings.username}@{settings.hostname}</span>
+                              <span style={{ color: activeTheme.promptSeparatorColor }}>:</span>
+                              <span style={{ color: activeTheme.promptPathColor }}>{settings.currentPath}</span>
+                              <span style={{ color: activeTheme.promptSymbolColor }} className="mr-2">$</span>
+                              <input
+                                type="text"
+                                className="terminal-inline-input flex-1"
+                                value={item.command}
+                                onChange={(e) => updateInteraction(item.id, e.target.value, item.output)}
+                                onFocus={() => setIsEditing(true)}
+                                onBlur={() => setIsEditing(false)}
+                                placeholder="command"
+                                spellCheck={false}
+                                autoComplete="off"
+                                autoCapitalize="off"
+                              />
+                            </div>
+                            {/* Output — show textarea if output exists OR user opened it */}
+                            {(item.output || outputVisibleIds.has(item.id)) ? (
+                              <textarea
+                                className="terminal-inline-textarea pl-1 opacity-95"
+                                value={item.output || ''}
+                                onChange={(e) => updateInteraction(item.id, item.command, e.target.value)}
+                                onFocus={() => setIsEditing(true)}
+                                onBlur={(e) => {
+                                  setIsEditing(false);
+                                  // If output is empty on blur, hide the textarea again
+                                  if (!e.target.value) {
+                                    setOutputVisibleIds(prev => {
+                                      const next = new Set(prev);
+                                      next.delete(item.id);
+                                      return next;
+                                    });
+                                  }
+                                }}
+                                placeholder="type output here..."
+                                spellCheck={false}
+                                rows={item.output ? item.output.split('\n').length : 1}
+                                autoFocus={outputVisibleIds.has(item.id) && !item.output}
+                              />
+                            ) : (
+                              <button
+                                className="terminal-add-output"
+                                onClick={() => setOutputVisibleIds(prev => new Set(prev).add(item.id))}
+                                type="button"
+                              >
+                                + output
+                              </button>
+                            )}
+                          </div>
+                        ))}
+
+                        {/* Final prompt line with cursor */}
+                        <div className="flex items-center">
+                          <span style={{ color: activeTheme.promptUserHostColor }}>{settings.username}@{settings.hostname}</span>
+                          <span style={{ color: activeTheme.promptSeparatorColor }}>:</span>
+                          <span style={{ color: activeTheme.promptPathColor }}>{settings.currentPath}</span>
+                          <span style={{ color: activeTheme.promptSymbolColor }} className="mr-2">$</span>
+                          <span className={`inline-block w-2 h-4 ${settings.isBlinkingCursor ? 'animate-pulse' : ''}`} style={{ 
+                            backgroundColor: activeTheme.cursorColor,
+                            height: settings.cursorStyle === 'block' ? '1.1em' : '1px',
+                            width: settings.cursorStyle === 'beam' ? '2px' : '8px',
+                            marginTop: settings.cursorStyle === 'underline' ? '0.8em' : '0px',
+                          }} />
+                        </div>
+
+                        {/* Add command button — inside terminal */}
+                        <button
+                          className="terminal-add-row"
+                          onClick={handleAddEmptyInteraction}
+                          type="button"
+                        >
+                          <Plus className="h-3 w-3" /> Add command
+                        </button>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <PageViewer />
-          )}
+            ) : (
+              <PageViewer />
+            )}
+          </div>
+
+          {/* ═══════ RICH SEO LANDING CONTENT ═══════ */}
+          <div className="mt-8">
+            <SEOContentSection />
+          </div>
         </div>
       </main>
 
@@ -1320,26 +1439,22 @@ export default function App() {
         >
           <Plus className="h-6 w-6" />
         </button>
-
-        {/* ═══════ RICH SEO LANDING CONTENT ═══════ */}
-        <SEOContentSection />
       </div>
 
       {/* ═══════ MOBILE BOTTOM SHEETS ═══════ */}
       <AnimatePresence>
-        {/* Terminal Settings Bottom Sheet */}
+        {/* Terminal Settings Bottom Sheet — simplified: Prompt + Style only (editing is inline now) */}
         {bottomSheet === 'terminal-settings' && activeMode === 'terminal' && (
           <BottomSheet
             isOpen={true}
             onClose={() => setBottomSheet(null)}
-            title="Terminal Controls"
+            title="Terminal Settings"
           >
-            {/* Sub-tabs inside the sheet */}
+            {/* Sub-tabs: Prompt & Style only — Rows editing is inline in the terminal */}
             <div className="flex gap-2 mb-5 -mt-1">
               {[
                 { id: 'prompt-sub', label: 'Prompt', icon: <Type className="h-3.5 w-3.5" /> },
                 { id: 'style-sub', label: 'Style', icon: <Palette className="h-3.5 w-3.5" /> },
-                { id: 'interactions-sub', label: 'Rows', icon: <List className="h-3.5 w-3.5" /> },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -1352,7 +1467,11 @@ export default function App() {
                 </button>
               ))}
             </div>
+            {/* Default to showing prompt settings */}
             {renderPromptTab()}
+            <div className="mt-6 pt-4 border-t border-slate-800/40">
+              <p className="text-[10px] text-slate-500 text-center">💡 Tap commands & outputs directly in the terminal to edit them</p>
+            </div>
           </BottomSheet>
         )}
 
@@ -1363,14 +1482,8 @@ export default function App() {
         )}
 
         {bottomSheet === 'style-sub' && (
-          <BottomSheet isOpen={true} onClose={() => setBottomSheet(null)} title="Style Settings">
+          <BottomSheet isOpen={true} onClose={() => setBottomSheet(null)} title="Style & Appearance">
             {renderStyleTab()}
-          </BottomSheet>
-        )}
-
-        {bottomSheet === 'interactions-sub' && (
-          <BottomSheet isOpen={true} onClose={() => setBottomSheet(null)} title="Interactions">
-            {renderInteractionsTab()}
           </BottomSheet>
         )}
 
