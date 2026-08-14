@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Ubuntu+Mono:ital,wght@0,400;0,700;1,400;1,700&family=Inter:wght@100..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Ubuntu+Mono:ital,wght@0,400;0,700;1,400;1,700&family=Source+Code+Pro:ital,wght@0,300..800;1,300..800&family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&family=Inter:wght@100..900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -130,12 +130,15 @@
   border: none;
   outline: none;
   color: inherit;
-  font: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  font-style: inherit;
+  line-height: inherit;
   padding: 0;
   margin: 0;
   width: auto;
   min-width: 2ch;
-  line-height: inherit;
   caret-color: currentColor;
   -webkit-tap-highlight-color: transparent;
 }
@@ -156,11 +159,14 @@
   border: none;
   outline: none;
   color: inherit;
-  font: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  font-style: inherit;
+  line-height: inherit;
   padding: 0;
   margin: 0;
   width: 100%;
-  line-height: inherit;
   resize: none;
   overflow: hidden;
   white-space: pre-wrap;

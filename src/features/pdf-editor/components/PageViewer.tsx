@@ -39,22 +39,31 @@ const PageRenderer: React.FC<PageRendererProps> = ({ pageNumber, pdfDocument, zo
       setIsRendering(true);
       try {
         const page = await pdfDocument.getPage(pageNumber);
+        
+        // High-DPI canvas resolution (minimum 2x or devicePixelRatio)
+        const outputScale = Math.max(2, window.devicePixelRatio || 1);
         const viewport = page.getViewport({ scale: zoomScale });
         
         const canvas = canvasRef.current;
-        const context = canvas.getContext('2d');
+        const context = canvas.getContext('2d', { alpha: false });
         if (!context) return;
 
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
+        canvas.width = Math.floor(viewport.width * outputScale);
+        canvas.height = Math.floor(viewport.height * outputScale);
         canvas.style.width = `${viewport.width}px`;
         canvas.style.height = `${viewport.height}px`;
 
         setViewportSize({ width: viewport.width, height: viewport.height });
 
+        // Use PDF.js transform matrix for High-DPI scaling so PDF content fills 100% of page width
+        const transform = outputScale !== 1
+          ? [outputScale, 0, 0, outputScale, 0, 0]
+          : undefined;
+
         renderTask = page.render({
           canvasContext: context,
           viewport: viewport,
+          transform: transform,
           canvas: canvas,
         });
         await renderTask.promise;
@@ -265,15 +274,6 @@ export const PageViewer: React.FC = () => {
     setZoomScale(pdfDoc.zoomScale + amount);
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center p-12">
-        <Loader2 className="h-10 w-10 animate-spin text-indigo-500 mb-4" />
-        <p className="text-sm text-slate-400 font-semibold">Parsing document layout...</p>
-      </div>
-    );
-  }
-
   const isBlankCanvas = !pdfDoc.file;
 
   // Strict Mobile Enclosure: On ALL screen sizes, constrain canvas width to fit inside the container
@@ -306,6 +306,15 @@ export const PageViewer: React.FC = () => {
       }
     }
   }, [isMobileViewport, containerWidth, fitToContainerScale, pdfDoc.zoomScale, setZoomScale]);
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12">
+        <Loader2 className="h-10 w-10 animate-spin text-indigo-500 mb-4" />
+        <p className="text-sm text-slate-400 font-semibold">Parsing document layout...</p>
+      </div>
+    );
+  }
 
   return (
     <div ref={containerRef} className="flex flex-col h-full w-full overflow-x-hidden">

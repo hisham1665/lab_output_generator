@@ -672,6 +672,9 @@ export default function App() {
           <option value="Ubuntu Mono" className="bg-slate-950">Ubuntu Mono</option>
           <option value="JetBrains Mono" className="bg-slate-950">JetBrains Mono</option>
           <option value="Fira Code" className="bg-slate-950">Fira Code</option>
+          <option value="Source Code Pro" className="bg-slate-950">Source Code Pro</option>
+          <option value="Courier Prime" className="bg-slate-950">Courier Prime</option>
+          <option value="Space Mono" className="bg-slate-950">Space Mono</option>
           <option value="monospace" className="bg-slate-950">System Monospace</option>
         </select>
       </div>
@@ -1208,7 +1211,7 @@ export default function App() {
                       )}
 
                       {/* Terminal Body — Inline Editable */}
-                      <div className="text-left font-mono select-text" style={{ padding: `${settings.padding}px`, lineHeight: '1.25', backgroundColor: activeTheme.backgroundColor }}>
+                      <div className="text-left select-text" style={{ padding: `${settings.padding}px`, lineHeight: '1.25', backgroundColor: activeTheme.backgroundColor, fontFamily: 'inherit' }}>
                         {interactions.map((item) => (
                           <div key={item.id} className="terminal-row">
                             {/* Delete button */}
